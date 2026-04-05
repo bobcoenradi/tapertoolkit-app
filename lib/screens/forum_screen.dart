@@ -35,19 +35,24 @@ class _ForumScreenState extends State<ForumScreen> {
     }
     setState(() => _loading = refresh || _posts.isEmpty);
 
-    final result = await FirestoreService.fetchPostsPaginated(
-      topicId: widget.topic.id,
-      lastDoc: _lastDoc,
-    );
+    try {
+      final result = await FirestoreService.fetchPostsPaginated(
+        topicId: widget.topic.id,
+        lastDoc: _lastDoc,
+      );
 
-    if (!mounted) return;
-    setState(() {
-      _posts.addAll(result.posts);
-      _lastDoc = result.lastDoc;
-      _hasMore = result.lastDoc != null;
-      _loading = false;
-      _loadingMore = false;
-    });
+      if (!mounted) return;
+      setState(() {
+        _posts.addAll(result.posts);
+        _lastDoc = result.lastDoc;
+        _hasMore = result.lastDoc != null;
+        _loading = false;
+        _loadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _loading = false; _loadingMore = false; });
+    }
   }
 
   Future<void> _loadMore() async {
