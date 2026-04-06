@@ -155,16 +155,20 @@ class FirestoreService {
   static Future<TaperPlan?> fetchActiveTaperPlan() async {
     final uid = _uid;
     if (uid == null) return null;
+    // Avoid whereIn+orderBy compound query (requires a Firestore composite index).
+    // Fetch all plans and filter in Dart instead.
     final snap = await _db
         .collection('users')
         .doc(uid)
         .collection('taperPlans')
-        .where('status', whereIn: ['active', 'hold'])
-        .orderBy('startDate', descending: true)
-        .limit(1)
         .get();
     if (snap.docs.isEmpty) return null;
-    return TaperPlan.fromMap(snap.docs.first.data(), snap.docs.first.id);
+    final plans = snap.docs
+        .map((d) => TaperPlan.fromMap(d.data(), d.id))
+        .where((p) => p.status == 'active' || p.status == 'hold')
+        .toList()
+      ..sort((a, b) => b.startDate.compareTo(a.startDate));
+    return plans.isEmpty ? null : plans.first;
   }
 
   static Future<void> updateTaperPlanStatus(

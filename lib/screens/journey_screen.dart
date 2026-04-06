@@ -67,19 +67,24 @@ class _JourneyScreenState extends State<JourneyScreen> {
   bool get _isFuture => _selectedDay.isAfter(DateTime.now()) && !_isToday;
 
   Future<void> _loadData() async {
-    final entries = await FirestoreService.fetchJournalEntries();
-    final appts  = await FirestoreService.fetchUpcomingAppointments();
-    final meds   = await FirestoreService.fetchMedReminders();
-    final plan   = await FirestoreService.fetchActiveTaperPlan();
-    if (!mounted) return;
-    setState(() {
-      _entryMap     = {for (final e in entries) e.dateKey: e};
-      _appointments = appts;
-      _meds         = meds;
-      _taperPlan    = plan;
-      _loading      = false;
-    });
-    _loadEntryForDay(_selectedDay);
+    try {
+      final entries = await FirestoreService.fetchJournalEntries();
+      final appts  = await FirestoreService.fetchUpcomingAppointments();
+      final meds   = await FirestoreService.fetchMedReminders();
+      TaperPlan? plan;
+      try { plan = await FirestoreService.fetchActiveTaperPlan(); } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _entryMap     = {for (final e in entries) e.dateKey: e};
+        _appointments = appts;
+        _meds         = meds;
+        _taperPlan    = plan;
+        _loading      = false;
+      });
+      _loadEntryForDay(_selectedDay);
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   /// Returns true if this day is a dose change day in the active taper plan.

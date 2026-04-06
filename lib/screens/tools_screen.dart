@@ -45,14 +45,18 @@ class _ToolsScreenState extends State<ToolsScreen> {
   }
 
   Future<void> _load() async {
-    final plan = await FirestoreService.fetchActiveTaperPlan();
-    final log  = await FirestoreService.fetchDoseLog();
-    if (!mounted) return;
-    setState(() {
-      _plan = plan;
-      _doseLog = log;
-      _loadingPlan = false;
-    });
+    try {
+      final plan = await FirestoreService.fetchActiveTaperPlan();
+      final log  = await FirestoreService.fetchDoseLog();
+      if (!mounted) return;
+      setState(() {
+        _plan = plan;
+        _doseLog = log;
+        _loadingPlan = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingPlan = false);
+    }
   }
 
   Future<void> _openWizard() async {

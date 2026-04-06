@@ -65,13 +65,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadTaperData() async {
-    final plan  = await FirestoreService.fetchActiveTaperPlan();
-    final taken = await FirestoreService.isDoseTakenToday();
-    if (!mounted) return;
-    setState(() {
-      _taperPlan = plan;
-      _doseTakenToday = taken;
-    });
+    try {
+      final plan  = await FirestoreService.fetchActiveTaperPlan();
+      final taken = await FirestoreService.isDoseTakenToday();
+      if (!mounted) return;
+      setState(() {
+        _taperPlan = plan;
+        _doseTakenToday = taken;
+      });
+    } catch (_) {
+      // Non-critical — dashboard still works without taper data
+    }
   }
 
   Future<void> _loadTodayMood() async {
