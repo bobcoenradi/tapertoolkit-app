@@ -308,13 +308,162 @@ class _JourneyScreenState extends State<JourneyScreen> {
   }
 
   void _showAddNoteSheet() {
-    // Pre-select today in the calendar and scroll to journal
-    setState(() {
-      _selectedDay = DateTime.now();
-      _focusedDay = DateTime.now();
-      _tab = 0; // switch to calendar tab
-    });
-    _loadEntryForDay(DateTime.now());
+    DateTime pickedDay = _selectedDay;
+    String pickedMood = _mood;
+    final textCtrl = TextEditingController(text: _journalCtrl.text);
+
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+              )),
+              const SizedBox(height: 20),
+              Text('Add Note', style: AppTextStyles.h3()),
+              const SizedBox(height: 16),
+
+              // Date picker pill
+              GestureDetector(
+                onTap: () async {
+                  final d = await showDatePicker(
+                    context: ctx,
+                    initialDate: pickedDay,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                    builder: (c, child) => Theme(
+                      data: ThemeData(colorScheme: const ColorScheme.light(primary: AppColors.primary)),
+                      child: child!,
+                    ),
+                  );
+                  if (d != null) setModal(() => pickedDay = d);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.calendar_today_outlined, size: 16, color: AppColors.primary),
+                    const SizedBox(width: 10),
+                    Text(
+                      isSameDay(pickedDay, DateTime.now())
+                          ? 'Today'
+                          : DateFormat('EEE, d MMM yyyy').format(pickedDay),
+                      style: AppTextStyles.label(color: AppColors.primary),
+                    ),
+                    const Spacer(),
+                    const Icon(Icons.expand_more_rounded, size: 16, color: AppColors.primary),
+                  ]),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Mood selector
+              Text('How are you feeling?', style: AppTextStyles.label()),
+              const SizedBox(height: 10),
+              Row(
+                children: _moods.map((m) {
+                  final selected = pickedMood == m.$1;
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () => setModal(() => pickedMood = m.$1),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: selected ? m.$4 : m.$4.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(40),
+                          border: Border.all(
+                            color: selected ? m.$4 : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Text(m.$2, style: TextStyle(fontSize: selected ? 24 : 20)),
+                          const SizedBox(height: 2),
+                          Text(m.$3, style: AppTextStyles.caption(
+                            color: selected ? AppColors.textDark : AppColors.textLight,
+                          ).copyWith(fontWeight: selected ? FontWeight.w600 : FontWeight.normal, fontSize: 10)),
+                        ]),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Text field
+              TextField(
+                controller: textCtrl,
+                maxLines: 4,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Any shifts in mood or physical symptoms?',
+                  hintStyle: AppTextStyles.body(color: AppColors.textLight),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE8DDD0))),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE8DDD0))),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.primary)),
+                ),
+                style: AppTextStyles.body(color: AppColors.textDark),
+              ),
+
+              const SizedBox(height: 20),
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                    final key = _dateKey(pickedDay);
+                    final entry = JournalEntry(
+                      id: key, uid: uid, date: pickedDay,
+                      mood: pickedMood.isEmpty ? 'okay' : pickedMood,
+                      text: textCtrl.text.trim().isEmpty ? null : textCtrl.text.trim(),
+                    );
+                    await FirestoreService.saveJournalEntry(entry);
+                    setState(() {
+                      _entryMap[key] = entry;
+                      // If pickedDay is selected in the calendar, update the visible fields
+                      if (isSameDay(pickedDay, _selectedDay)) {
+                        _journalCtrl.text = entry.text ?? '';
+                        _mood = entry.mood;
+                      }
+                    });
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text('Save Note', style: AppTextStyles.label(color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
