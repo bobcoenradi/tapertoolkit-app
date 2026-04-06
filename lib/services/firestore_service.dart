@@ -78,6 +78,21 @@ class FirestoreService {
         .toList();
   }
 
+  /// Fetches all appointments (past and future) — used by the calendar view.
+  static Future<List<Appointment>> fetchAllAppointments() async {
+    final uid = _uid;
+    if (uid == null) return [];
+    final snap = await _db
+        .collection('users')
+        .doc(uid)
+        .collection('appointments')
+        .orderBy('dateTime')
+        .get();
+    return snap.docs
+        .map((d) => Appointment.fromMap(d.data(), d.id))
+        .toList();
+  }
+
   static Future<void> deleteAppointment(String id) async {
     final uid = _uid;
     if (uid == null) return;

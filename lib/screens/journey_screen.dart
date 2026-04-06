@@ -69,7 +69,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
   Future<void> _loadData() async {
     try {
       final entries = await FirestoreService.fetchJournalEntries();
-      final appts   = await FirestoreService.fetchUpcomingAppointments();
+      final appts   = await FirestoreService.fetchAllAppointments();
       final meds    = await FirestoreService.fetchMedReminders();
       TaperPlan? plan;
       try { plan = await FirestoreService.fetchActiveTaperPlan(); } catch (_) {}
