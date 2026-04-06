@@ -57,6 +57,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() => _profile = profile);
   }
 
+  // Called by any tab that returns from ProfileScreen
+  void onProfileUpdated() => _loadProfile();
+
   Widget _buildTabNavigator(int index, Widget child) {
     return Navigator(
       key: _navigatorKeys[index],

@@ -8,14 +8,46 @@ import 'faq_screen.dart';
 import 'checklist_screen.dart';
 import 'profile_screen.dart';
 
-class MenuScreen extends StatelessWidget {
+class MenuScreen extends StatefulWidget {
   final UserProfile? profile;
   const MenuScreen({super.key, this.profile});
 
   @override
+  State<MenuScreen> createState() => _MenuScreenState();
+}
+
+class _MenuScreenState extends State<MenuScreen> {
+  UserProfile? _profile;
+
+  @override
+  void initState() {
+    super.initState();
+    _profile = widget.profile;
+    _loadProfile();
+  }
+
+  @override
+  void didUpdateWidget(MenuScreen old) {
+    super.didUpdateWidget(old);
+    if (old.profile != widget.profile) _profile = widget.profile;
+  }
+
+  Future<void> _loadProfile() async {
+    final p = await AuthService.fetchProfile();
+    if (mounted) setState(() => _profile = p);
+  }
+
+  Future<void> _openProfile() async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+    );
+    if (updated == true) _loadProfile();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final name = profile?.firstName ?? profile?.nickname ?? 'You';
-    final dayCount = profile?.daysSinceStart ?? 0;
+    final name = _profile?.firstName ?? _profile?.nickname ?? 'You';
+    final dayCount = _profile?.daysSinceStart ?? 0;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -40,7 +72,7 @@ class MenuScreen extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
                 child: GestureDetector(
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+                  onTap: _openProfile,
                   child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: AppDecorations.card(),
@@ -49,8 +81,11 @@ class MenuScreen extends StatelessWidget {
                       CircleAvatar(
                         radius: 32,
                         backgroundColor: AppColors.primarySoft,
-                        backgroundImage: profile?.avatarUrl != null ? NetworkImage(profile!.avatarUrl!) : null,
-                        child: profile?.avatarUrl == null
+                        backgroundImage: (_profile?.avatarUrl != null && _profile!.avatarUrl!.isNotEmpty)
+                            ? NetworkImage(_profile!.avatarUrl!)
+                            : null,
+                        onBackgroundImageError: (_profile?.avatarUrl != null) ? (_, __) {} : null,
+                        child: (_profile?.avatarUrl == null || _profile!.avatarUrl!.isEmpty)
                             ? const Icon(Icons.person, size: 32, color: AppColors.primary)
                             : null,
                       ),
@@ -79,7 +114,7 @@ class MenuScreen extends StatelessWidget {
                 iconBg: AppColors.primarySoft,
                 iconColor: AppColors.primary,
                 label: 'Profile',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+                onTap: _openProfile,
               ),
               _MenuItem(
                 icon: Icons.menu_book_outlined,
