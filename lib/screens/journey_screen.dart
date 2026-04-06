@@ -561,9 +561,13 @@ class _JourneyScreenState extends State<JourneyScreen> {
     final sortedAppts = _upcomingAppointments;
     final allMeds = _upcomingReminders;
 
-    // Journal entries with text, newest first
+    // Journal entries with text, today onwards, newest first
+    final today = DateTime.now();
     final notesEntries = _entryMap.values
-        .where((e) => e.text != null && e.text!.isNotEmpty)
+        .where((e) =>
+            e.text != null &&
+            e.text!.isNotEmpty &&
+            !e.date.isBefore(DateTime(today.year, today.month, today.day)))
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date));
 
