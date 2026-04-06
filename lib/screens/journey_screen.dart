@@ -712,6 +712,29 @@ class _JourneyScreenState extends State<JourneyScreen> {
                 const Icon(Icons.edit_note_rounded, size: 18, color: AppColors.primary),
                 const SizedBox(width: 8),
                 Text('Note', style: AppTextStyles.h4()),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.textLight),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () async {
+                    final key = _dateKey(_selectedDay);
+                    final existing = _entryMap[key];
+                    if (existing == null) return;
+                    // Save entry with text cleared, preserving mood
+                    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                    final updated = JournalEntry(
+                      id: key, uid: uid, date: _selectedDay,
+                      mood: existing.mood,
+                      text: null,
+                    );
+                    await FirestoreService.saveJournalEntry(updated);
+                    setState(() {
+                      _entryMap[key] = updated;
+                      _journalCtrl.clear();
+                    });
+                  },
+                ),
               ]),
               const SizedBox(height: 10),
               Text(_entryMap[_dateKey(_selectedDay)]!.text!,
@@ -982,7 +1005,19 @@ class _JourneyScreenState extends State<JourneyScreen> {
                         style: AppTextStyles.body()),
                   )
                 else
-                  ...notesEntries.map((e) => _NotesTile(entry: e)),
+                  ...notesEntries.map((e) => _NotesTile(
+                    entry: e,
+                    onDelete: () async {
+                      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                      final updated = JournalEntry(
+                        id: e.id, uid: uid, date: e.date,
+                        mood: e.mood,
+                        text: null,
+                      );
+                      await FirestoreService.saveJournalEntry(updated);
+                      _loadData();
+                    },
+                  )),
               ]),
             ),
           ),
@@ -1325,7 +1360,8 @@ class _MedTile extends StatelessWidget {
 
 class _NotesTile extends StatelessWidget {
   final JournalEntry entry;
-  const _NotesTile({required this.entry});
+  final VoidCallback onDelete;
+  const _NotesTile({required this.entry, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -1354,6 +1390,10 @@ class _NotesTile extends StatelessWidget {
           Text(entry.text ?? '', style: AppTextStyles.body(color: AppColors.textDark),
               maxLines: 3, overflow: TextOverflow.ellipsis),
         ])),
+        IconButton(
+          icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.textLight),
+          onPressed: onDelete,
+        ),
       ]),
     );
   }
