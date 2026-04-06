@@ -10,6 +10,7 @@ import '../services/firestore_service.dart';
 import '../services/auth_service.dart';
 import 'article_detail_screen.dart';
 import 'profile_screen.dart';
+import 'taper_wizard_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final UserProfile? profile;
@@ -62,6 +63,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ? (meds.firstWhere((m) => !m.ordered, orElse: () => meds.first))
           : null;
     });
+  }
+
+  Future<void> _openWizard() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const TaperWizardScreen()),
+    );
+    if (created == true) _loadTaperData();
   }
 
   Future<void> _loadTaperData() async {
@@ -147,13 +155,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {
       if (mounted) setState(() => _loadingContent = false);
     }
-  }
-
-  String _greeting() {
-    final h = DateTime.now().hour;
-    if (h < 12) return 'GOOD MORNING';
-    if (h < 17) return 'GOOD AFTERNOON';
-    return 'GOOD EVENING';
   }
 
   @override
@@ -293,14 +294,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     margin: const EdgeInsets.symmetric(horizontal: 3),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
-                      color: selected ? m.$4 : m.$4.withOpacity(0.18),
+                      color: selected ? m.$4 : m.$4.withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(40),
                       border: Border.all(
                         color: selected ? m.$4 : Colors.transparent,
                         width: 2,
                       ),
                       boxShadow: selected ? [
-                        BoxShadow(color: m.$4.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 3))
+                        BoxShadow(color: m.$4.withValues(alpha: 0.5), blurRadius: 10, offset: const Offset(0, 3))
                       ] : [],
                     ),
                     child: Column(
@@ -327,10 +328,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildReminders(UserProfile? profile) {
-    // Prefer taper plan data; fall back to profile
-    final hasPlan = _taperPlan != null;
-    final med  = hasPlan ? _taperPlan!.medicationName : (profile?.medication ?? 'Your medication');
-    final dose = hasPlan ? _taperPlan!.currentDose    : (profile?.currentDose ?? 0.0);
+    final plan = _taperPlan;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -340,88 +338,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Text("Today's Reminders", style: AppTextStyles.h4()),
           const SizedBox(height: 12),
 
-          // Morning dose card
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 250),
-            padding: const EdgeInsets.all(16),
-            decoration: AppDecorations.gradientCard(),
-            child: _doseTakenToday
-                // ── Taken state ──────────────────────────────────────────
-                ? Row(children: [
-                    const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 22),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('MORNING DOSE', style: AppTextStyles.caption(color: AppColors.primary)
-                          .copyWith(letterSpacing: 1)),
-                      Text('${dose}mg taken today ✓',
-                          style: AppTextStyles.label(color: AppColors.textDark)),
-                      Text(med, style: AppTextStyles.body(color: AppColors.textMid)),
-                    ])),
-                    TextButton(
-                      onPressed: () => setState(() { _doseTakenToday = false; _showDoseConfirm = false; }),
-                      child: Text('Undo', style: AppTextStyles.caption(color: AppColors.textLight)),
-                    ),
-                  ])
-                : _showDoseConfirm
-                    // ── Checkbox confirm state ────────────────────────────
-                    ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Row(children: [
-                          const Icon(Icons.medication_outlined, color: AppColors.primary),
-                          const SizedBox(width: 12),
-                          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('MORNING DOSE', style: AppTextStyles.caption(color: AppColors.primary)
-                                .copyWith(letterSpacing: 1)),
-                            Text('${dose}mg  •  $med',
-                                style: AppTextStyles.label(color: AppColors.textDark)),
-                          ]),
-                        ]),
-                        const SizedBox(height: 14),
-                        GestureDetector(
-                          onTap: () async {
-                            setState(() => _doseTakenToday = true);
-                            await FirestoreService.logDoseTaken(dose);
-                          },
-                          child: Row(children: [
-                            Container(
-                              width: 22, height: 22,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: AppColors.primary, width: 1.5),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text("I've already taken today's dose",
-                                style: AppTextStyles.label(color: AppColors.textDark)),
-                          ]),
-                        ),
-                      ])
-                    // ── Default state ─────────────────────────────────────
-                    : Row(children: [
-                        const Icon(Icons.medication_outlined, color: AppColors.primary),
-                        const SizedBox(width: 12),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('MORNING DOSE', style: AppTextStyles.caption(color: AppColors.primary)
-                              .copyWith(letterSpacing: 1)),
-                          Text(dose > 0 ? '${dose}mg' : '—',
-                              style: AppTextStyles.h3(color: AppColors.textDark)),
-                          Text(med, style: AppTextStyles.body(color: AppColors.textMid)),
-                        ])),
-                        if (dose > 0)
-                          ElevatedButton(
-                            onPressed: () => setState(() => _showDoseConfirm = true),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary, foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              elevation: 0,
-                            ),
-                            child: Text('Log\nNow',
-                                style: AppTextStyles.caption(color: Colors.white),
-                                textAlign: TextAlign.center),
-                          ),
-                      ]),
-          ),
+          // Morning dose card — or wizard promo if no plan
+          plan != null
+              ? _buildDoseCard(plan.currentDose, plan.medicationName)
+              : _buildWizardPromo(),
 
           const SizedBox(height: 12),
 
@@ -496,6 +416,130 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDoseCard(double dose, String med) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      padding: const EdgeInsets.all(16),
+      decoration: AppDecorations.gradientCard(),
+      child: _doseTakenToday
+          // ── Taken state ──────────────────────────────────────────
+          ? Row(children: [
+              const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 22),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('MORNING DOSE', style: AppTextStyles.caption(color: AppColors.primary)
+                    .copyWith(letterSpacing: 1)),
+                Text('${dose}mg taken today ✓',
+                    style: AppTextStyles.label(color: AppColors.textDark)),
+                Text(med, style: AppTextStyles.body(color: AppColors.textMid)),
+              ])),
+              TextButton(
+                onPressed: () => setState(() { _doseTakenToday = false; _showDoseConfirm = false; }),
+                child: Text('Undo', style: AppTextStyles.caption(color: AppColors.textLight)),
+              ),
+            ])
+          : _showDoseConfirm
+              // ── Checkbox confirm state ────────────────────────────
+              ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    const Icon(Icons.medication_outlined, color: AppColors.primary),
+                    const SizedBox(width: 12),
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('MORNING DOSE', style: AppTextStyles.caption(color: AppColors.primary)
+                          .copyWith(letterSpacing: 1)),
+                      Text('${dose}mg  •  $med',
+                          style: AppTextStyles.label(color: AppColors.textDark)),
+                    ]),
+                  ]),
+                  const SizedBox(height: 14),
+                  GestureDetector(
+                    onTap: () async {
+                      setState(() => _doseTakenToday = true);
+                      await FirestoreService.logDoseTaken(dose);
+                    },
+                    child: Row(children: [
+                      Container(
+                        width: 22, height: 22,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AppColors.primary, width: 1.5),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text("I've already taken today's dose",
+                          style: AppTextStyles.label(color: AppColors.textDark)),
+                    ]),
+                  ),
+                ])
+              // ── Default state ─────────────────────────────────────
+              : Row(children: [
+                  const Icon(Icons.medication_outlined, color: AppColors.primary),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('MORNING DOSE', style: AppTextStyles.caption(color: AppColors.primary)
+                        .copyWith(letterSpacing: 1)),
+                    Text('${dose}mg', style: AppTextStyles.h3(color: AppColors.textDark)),
+                    Text(med, style: AppTextStyles.body(color: AppColors.textMid)),
+                  ])),
+                  ElevatedButton(
+                    onPressed: () => setState(() => _showDoseConfirm = true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary, foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      elevation: 0,
+                    ),
+                    child: Text('Log\nNow',
+                        style: AppTextStyles.caption(color: Colors.white),
+                        textAlign: TextAlign.center),
+                  ),
+                ]),
+    );
+  }
+
+  Widget _buildWizardPromo() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: AppDecorations.gradientCard(),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42, height: 42,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.route_outlined, color: AppColors.primary, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('No active taper plan', style: AppTextStyles.label(color: AppColors.textDark)),
+                const SizedBox(height: 4),
+                Text(
+                  'Set up a Guided Taper Plan to track your dose here and get personalised reminders.',
+                  style: AppTextStyles.body(color: AppColors.textMid),
+                ),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: _openWizard,
+                  child: Text(
+                    'Start Guided Taper Wizard →',
+                    style: AppTextStyles.label(color: AppColors.primary),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
