@@ -204,10 +204,132 @@ class _JourneyScreenState extends State<JourneyScreen> {
 
   // ─── Build ──────────────────────────────────────────────────────────────────
 
+  void _showAddPicker() {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36, height: 4,
+                  decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text('What would you like to add?', style: AppTextStyles.h3()),
+              const SizedBox(height: 20),
+              _addPickerTile(
+                ctx,
+                icon: Icons.edit_note_rounded,
+                color: AppColors.primary,
+                title: 'Note',
+                subtitle: 'Add a journal note for a specific day',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showAddNoteSheet();
+                },
+              ),
+              const SizedBox(height: 12),
+              _addPickerTile(
+                ctx,
+                icon: Icons.notifications_outlined,
+                color: AppColors.warning,
+                title: 'Reminder',
+                subtitle: 'Medication order, refill, or personal reminder',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showAddMedSheet();
+                },
+              ),
+              const SizedBox(height: 12),
+              _addPickerTile(
+                ctx,
+                icon: Icons.calendar_month_outlined,
+                color: const Color(0xFF7BAFD4),
+                title: 'Appointment',
+                subtitle: 'Doctor visit, taper review, or any appointment',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showAddAppointmentSheet();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _addPickerTile(BuildContext ctx, {
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Row(children: [
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: AppTextStyles.label(color: AppColors.textDark)),
+            Text(subtitle, style: AppTextStyles.bodySmall()),
+          ])),
+          Icon(Icons.chevron_right_rounded, color: color, size: 20),
+        ]),
+      ),
+    );
+  }
+
+  void _showAddNoteSheet() {
+    // Pre-select today in the calendar and scroll to journal
+    setState(() {
+      _selectedDay = DateTime.now();
+      _focusedDay = DateTime.now();
+      _tab = 0; // switch to calendar tab
+    });
+    _loadEntryForDay(DateTime.now());
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
+      floatingActionButton: _loading
+          ? null
+          : FloatingActionButton(
+              onPressed: _showAddPicker,
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              elevation: 2,
+              child: const Icon(Icons.add_rounded, size: 28),
+            ),
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
@@ -682,18 +804,10 @@ class _JourneyScreenState extends State<JourneyScreen> {
               decoration: AppDecorations.card(),
               padding: const EdgeInsets.all(16),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Row(children: [
-                    const Icon(Icons.calendar_month_outlined, size: 18, color: AppColors.primary),
-                    const SizedBox(width: 8),
-                    Text('Appointments', style: AppTextStyles.h4()),
-                  ]),
-                  TextButton.icon(
-                    onPressed: _showAddAppointmentSheet,
-                    icon: const Icon(Icons.add, size: 14, color: AppColors.primary),
-                    label: Text('Add', style: AppTextStyles.label(color: AppColors.primary).copyWith(fontSize: 13)),
-                    style: TextButton.styleFrom(minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
-                  ),
+                Row(children: [
+                  const Icon(Icons.calendar_month_outlined, size: 18, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Text('Appointments', style: AppTextStyles.h4()),
                 ]),
                 const SizedBox(height: 12),
                 if (sortedAppts.isEmpty)
@@ -722,18 +836,10 @@ class _JourneyScreenState extends State<JourneyScreen> {
               decoration: AppDecorations.card(),
               padding: const EdgeInsets.all(16),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Row(children: [
-                    const Icon(Icons.notifications_outlined, size: 18, color: AppColors.primary),
-                    const SizedBox(width: 8),
-                    Text('Reminders', style: AppTextStyles.h4()),
-                  ]),
-                  TextButton.icon(
-                    onPressed: _showAddMedSheet,
-                    icon: const Icon(Icons.add, size: 14, color: AppColors.primary),
-                    label: Text('Add', style: AppTextStyles.label(color: AppColors.primary).copyWith(fontSize: 13)),
-                    style: TextButton.styleFrom(minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
-                  ),
+                Row(children: [
+                  const Icon(Icons.notifications_outlined, size: 18, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Text('Reminders', style: AppTextStyles.h4()),
                 ]),
                 const SizedBox(height: 12),
                 if (allMeds.isEmpty)
