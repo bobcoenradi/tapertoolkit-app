@@ -37,14 +37,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     _localProfile = widget.profile;
     _loadContent();
-  }
-
-  @override
-  void didUpdateWidget(DashboardScreen old) {
-    super.didUpdateWidget(old);
-    if (old.profile != widget.profile) {
-      setState(() => _localProfile = widget.profile);
-    }
+    _refreshProfile(); // always fetch fresh from Firestore on mount
   }
 
   Future<void> _refreshProfile() async {
@@ -53,10 +46,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _openProfile() async {
-    final updated = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const ProfileScreen()),
     );
-    if (updated == true) _refreshProfile();
+    _refreshProfile(); // always reload — whether saved or cancelled, photo may have changed
   }
 
   Future<void> _loadContent() async {
