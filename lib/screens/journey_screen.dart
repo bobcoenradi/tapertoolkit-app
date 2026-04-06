@@ -152,16 +152,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Journey', style: AppTextStyles.h3()),
-          const SizedBox(height: 4),
-          Text(DateFormat('MMMM yyyy').format(_focusedDay).toUpperCase(),
-              style: AppTextStyles.caption(color: AppColors.textLight).copyWith(letterSpacing: 1)),
-          Text('Your Taper Progress', style: AppTextStyles.h2()),
-        ],
-      ),
+      child: Text('Your Journey', style: AppTextStyles.h2()),
     );
   }
 
@@ -439,7 +430,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
             TextButton.icon(
               onPressed: () => _showAddMedSheet(),
               icon: const Icon(Icons.add, size: 16, color: AppColors.primary),
-              label: Text('Add Medication', style: AppTextStyles.label(color: AppColors.primary)),
+              label: Text('Add Reminder', style: AppTextStyles.label(color: AppColors.primary)),
             ),
           ],
         ),
@@ -534,48 +525,93 @@ class _JourneyScreenState extends State<JourneyScreen> {
   }
 
   void _showAddMedSheet() {
-    final nameCtrl   = TextEditingController();
-    final dosageCtrl = TextEditingController();
+    final titleCtrl  = TextEditingController();
+    final notesCtrl  = TextEditingController();
+    bool remindMe    = false;
 
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Add Medication', style: AppTextStyles.h3()),
-            const SizedBox(height: 16),
-            _sheetField(nameCtrl, 'Medication name (e.g. Sertraline)'),
-            const SizedBox(height: 12),
-            _sheetField(dosageCtrl, 'Dosage (e.g. 50mg)'),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () async {
-                  if (nameCtrl.text.trim().isEmpty) return;
-                  final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-                  final med = MedReminder(
-                    id: '', uid: uid,
-                    name: nameCtrl.text.trim(),
-                    dosage: dosageCtrl.text.trim().isEmpty ? null : dosageCtrl.text.trim(),
-                    status: 'needed',
-                  );
-                  await FirestoreService.saveMedReminder(med);
-                  Navigator.of(ctx).pop();
-                  _loadData();
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white, elevation: 0, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                child: Text('Save Medication', style: AppTextStyles.label(color: Colors.white)),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle
+              Center(
+                child: Container(width: 36, height: 4,
+                  decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
               ),
-            ),
-          ],
+              const SizedBox(height: 20),
+              Text('Add Reminder', style: AppTextStyles.h3()),
+              const SizedBox(height: 4),
+              Text('e.g. medication order, refill, or any personal reminder',
+                  style: AppTextStyles.body()),
+              const SizedBox(height: 20),
+              _sheetField(titleCtrl, 'Reminder title (e.g. Order Sertraline 50mg)'),
+              const SizedBox(height: 12),
+              _sheetField(notesCtrl, 'Notes (optional)'),
+              const SizedBox(height: 16),
+              // Remind me checkbox
+              GestureDetector(
+                onTap: () => setModal(() => remindMe = !remindMe),
+                child: Row(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      width: 22, height: 22,
+                      decoration: BoxDecoration(
+                        color: remindMe ? AppColors.primary : Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: remindMe ? AppColors.primary : AppColors.border,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: remindMe
+                          ? const Icon(Icons.check, size: 14, color: Colors.white)
+                          : null,
+                    ),
+                    const SizedBox(width: 12),
+                    Text('Remind me', style: AppTextStyles.label(color: AppColors.textDark)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    if (titleCtrl.text.trim().isEmpty) return;
+                    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                    final med = MedReminder(
+                      id: '', uid: uid,
+                      name: titleCtrl.text.trim(),
+                      dosage: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
+                      ordered: false,
+                      status: remindMe ? 'needed' : 'noted',
+                    );
+                    await FirestoreService.saveMedReminder(med);
+                    Navigator.of(ctx).pop();
+                    _loadData();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text('Save Reminder', style: AppTextStyles.label(color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
