@@ -156,6 +156,32 @@ class _JourneyScreenState extends State<JourneyScreen> {
       .where((m) => m.refillNeededBy != null && isSameDay(m.refillNeededBy!, _selectedDay))
       .toList();
 
+  bool _hasAppointment(DateTime day) =>
+      _appointments.any((a) => isSameDay(a.dateTime, day));
+
+  bool _hasReminder(DateTime day) =>
+      _meds.any((m) => m.refillNeededBy != null && isSameDay(m.refillNeededBy!, day));
+
+  bool _hasNote(DateTime day) {
+    final e = _entryMap[_dateKey(day)];
+    return e != null && (e.text != null && e.text!.isNotEmpty);
+  }
+
+  // ─── List helpers (upcoming only) ──────────────────────────────────────────
+
+  List<Appointment> get _upcomingAppointments {
+    final now = DateTime.now();
+    return _appointments
+        .where((a) => !a.dateTime.isBefore(DateTime(now.year, now.month, now.day)))
+        .toList()
+      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+  }
+
+  List<MedReminder> get _upcomingReminders => _meds
+      .where((m) => m.refillNeededBy == null ||
+          !m.refillNeededBy!.isBefore(DateTime.now()))
+      .toList();
+
   // ─── Build ──────────────────────────────────────────────────────────────────
 
   @override
@@ -307,6 +333,18 @@ class _JourneyScreenState extends State<JourneyScreen> {
     else if (isToday) bgColor = AppColors.primary.withValues(alpha: 0.15);
 
     final isDoseChange = _isDoseChangeDay(day);
+    final hasAppt      = _hasAppointment(day);
+    final hasReminder  = _hasReminder(day);
+    final hasNote      = _hasNote(day);
+    final hasDots = isDoseChange || hasAppt || hasReminder || hasNote;
+
+    // Collect dots: appointment=blue, reminder=orange, note=grey, dose=green
+    final dots = <Color>[
+      if (hasAppt)     const Color(0xFF7BAFD4),
+      if (hasReminder) AppColors.warning,
+      if (hasNote)     AppColors.textLight,
+      if (isDoseChange) AppColors.primary,
+    ];
 
     return Center(
       child: Column(
@@ -329,14 +367,23 @@ class _JourneyScreenState extends State<JourneyScreen> {
                   fontSize: 13,
                 )),
           ),
-          if (isDoseChange)
-            Container(
-              width: 5, height: 5,
-              margin: const EdgeInsets.only(top: 2),
-              decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+          if (hasDots)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: dots.take(4).map((c) => Container(
+                  width: 4, height: 4,
+                  margin: const EdgeInsets.symmetric(horizontal: 1),
+                  decoration: BoxDecoration(
+                    color: isSelected ? Colors.white.withValues(alpha: 0.8) : c,
+                    shape: BoxShape.circle,
+                  ),
+                )).toList(),
+              ),
             )
           else
-            const SizedBox(height: 7),
+            const SizedBox(height: 6),
         ],
       ),
     );
@@ -510,12 +557,9 @@ class _JourneyScreenState extends State<JourneyScreen> {
   // ─── List view ──────────────────────────────────────────────────────────────
 
   Widget _buildListView() {
-    // Sort appointments by date
-    final sortedAppts = [..._appointments]
-      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
-
-    // All reminders (no date filter)
-    final allMeds = _meds;
+    // Upcoming only
+    final sortedAppts = _upcomingAppointments;
+    final allMeds = _upcomingReminders;
 
     // Journal entries with text, newest first
     final notesEntries = _entryMap.values
