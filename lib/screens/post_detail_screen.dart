@@ -81,42 +81,29 @@ class _PostDetailScreenState extends State<PostDetailScreen>
     if (mounted) setState(() => _userRole = profile?.role ?? 'user');
   }
 
+  Future<bool?> _confirmDelete(String title) => showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title, style: AppTextStyles.h4()),
+      content: Text('This cannot be undone.', style: AppTextStyles.body()),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text('Delete', style: AppTextStyles.label(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+
   Future<void> _deletePost() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Delete post?', style: AppTextStyles.h4()),
-        content: Text('This cannot be undone.', style: AppTextStyles.body()),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete', style: AppTextStyles.label(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
+    if (await _confirmDelete('Delete post?') != true) return;
     await FirestoreService.deletePost(widget.post['id']);
     if (mounted) Navigator.of(context).pop(true);
   }
 
   Future<void> _deleteComment(String commentId, int index) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Delete comment?', style: AppTextStyles.h4()),
-        content: Text('This cannot be undone.', style: AppTextStyles.body()),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete', style: AppTextStyles.label(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
+    if (await _confirmDelete('Delete comment?') != true) return;
     await FirestoreService.deleteComment(postId: widget.post['id'], commentId: commentId);
     if (!mounted) return;
     setState(() {

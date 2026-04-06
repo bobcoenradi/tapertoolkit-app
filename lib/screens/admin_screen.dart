@@ -158,13 +158,13 @@ class _UserRoleTile extends StatelessWidget {
             if (newRole == role) return;
             showDialog(
               context: context,
-              builder: (_) => AlertDialog(
+              builder: (ctx) => AlertDialog(
                 title: Text('Change role', style: AppTextStyles.h4()),
                 content: Text('Set $nickname to $newRole?', style: AppTextStyles.body()),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
                   TextButton(
-                    onPressed: () { Navigator.pop(context); onSetRole(newRole); },
+                    onPressed: () { Navigator.pop(ctx); onSetRole(newRole); },
                     child: Text('Confirm', style: AppTextStyles.label(color: AppColors.primary)),
                   ),
                 ],
@@ -197,7 +197,7 @@ class _RolePill extends StatelessWidget {
         context: context,
         backgroundColor: Colors.white,
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        builder: (_) => Padding(
+        builder: (ctx) => Padding(
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Text('Set Role', style: AppTextStyles.h4()),
@@ -210,7 +210,7 @@ class _RolePill extends StatelessWidget {
                 ),
                 title: Text(role[0].toUpperCase() + role.substring(1), style: AppTextStyles.label(color: AppColors.textDark)),
                 trailing: current == role ? const Icon(Icons.check, color: AppColors.primary) : null,
-                onTap: () { Navigator.pop(context); onSetRole(role); },
+                onTap: () { Navigator.pop(ctx); onSetRole(role); },
               ),
           ]),
         ),
