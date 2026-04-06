@@ -30,6 +30,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Appointment? _nextAppointment;
   MedReminder? _nextReminder;
   TaperPlan? _taperPlan;
+  bool _loadingTaper = true;
   bool _doseTakenToday = false;
   bool _showDoseConfirm = false; // shows checkbox after tapping Log Now
 
@@ -75,14 +76,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _loadTaperData() async {
     try {
       final plan  = await FirestoreService.fetchActiveTaperPlan();
-      final taken = await FirestoreService.isDoseTakenToday();
+      final taken = plan != null
+          ? await FirestoreService.isDoseTakenToday()
+          : false;
       if (!mounted) return;
       setState(() {
         _taperPlan = plan;
         _doseTakenToday = taken;
+        _loadingTaper = false;
       });
-    } catch (_) {
-      // Non-critical — dashboard still works without taper data
+    } catch (e) {
+      debugPrint('_loadTaperData error: $e');
+      if (mounted) setState(() => _loadingTaper = false);
     }
   }
 
@@ -338,10 +343,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Text("Today's Reminders", style: AppTextStyles.h4()),
           const SizedBox(height: 12),
 
-          // Morning dose card — or wizard promo if no plan
-          plan != null
-              ? _buildDoseCard(plan.currentDose, plan.medicationName)
-              : _buildWizardPromo(),
+          // Morning dose card — loading / plan / no plan
+          _loadingTaper
+              ? _buildDoseLoading()
+              : plan != null
+                  ? _buildDoseCard(plan.currentDose, plan.medicationName)
+                  : _buildWizardPromo(),
 
           const SizedBox(height: 12),
 
@@ -419,6 +426,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDoseLoading() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: AppDecorations.gradientCard(),
+      child: Row(children: [
+        const SizedBox(
+          width: 20, height: 20,
+          child: CircularProgressIndicator(
+              color: AppColors.primary, strokeWidth: 2),
+        ),
+        const SizedBox(width: 14),
+        Text('Loading your taper plan…',
+            style: AppTextStyles.body(color: AppColors.textMid)),
+      ]),
     );
   }
 
