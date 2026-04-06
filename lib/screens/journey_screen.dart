@@ -372,42 +372,6 @@ class _JourneyScreenState extends State<JourneyScreen> {
 
               const SizedBox(height: 16),
 
-              // Mood selector
-              Text('How are you feeling?', style: AppTextStyles.label()),
-              const SizedBox(height: 10),
-              Row(
-                children: _moods.map((m) {
-                  final selected = pickedMood == m.$1;
-                  return Expanded(
-                    child: GestureDetector(
-                      onTap: () => setModal(() => pickedMood = m.$1),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(
-                          color: selected ? m.$4 : m.$4.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(40),
-                          border: Border.all(
-                            color: selected ? m.$4 : Colors.transparent,
-                            width: 2,
-                          ),
-                        ),
-                        child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          Text(m.$2, style: TextStyle(fontSize: selected ? 24 : 20)),
-                          const SizedBox(height: 2),
-                          Text(m.$3, style: AppTextStyles.caption(
-                            color: selected ? AppColors.textDark : AppColors.textLight,
-                          ).copyWith(fontWeight: selected ? FontWeight.w600 : FontWeight.normal, fontSize: 10)),
-                        ]),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-
-              const SizedBox(height: 16),
-
               // Text field
               TextField(
                 controller: textCtrl,
@@ -431,12 +395,15 @@ class _JourneyScreenState extends State<JourneyScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () async {
+                    if (textCtrl.text.trim().isEmpty) return;
                     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
                     final key = _dateKey(pickedDay);
+                    // Preserve existing mood for this day if there is one
+                    final existingMood = _entryMap[key]?.mood ?? '';
                     final entry = JournalEntry(
                       id: key, uid: uid, date: pickedDay,
-                      mood: pickedMood.isEmpty ? 'okay' : pickedMood,
-                      text: textCtrl.text.trim().isEmpty ? null : textCtrl.text.trim(),
+                      mood: existingMood,
+                      text: textCtrl.text.trim(),
                     );
                     await FirestoreService.saveJournalEntry(entry);
                     setState(() {
@@ -732,50 +699,25 @@ class _JourneyScreenState extends State<JourneyScreen> {
           ),
         ],
 
-        const SizedBox(height: 20),
-
-        // Notes card
-        Container(
-          decoration: AppDecorations.card(),
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              const Icon(Icons.edit_note_rounded, size: 18, color: AppColors.primary),
-              const SizedBox(width: 8),
-              Text('Notes', style: AppTextStyles.h4()),
+        // Show existing note for this day if there is one
+        if (_entryMap[_dateKey(_selectedDay)]?.text != null &&
+            _entryMap[_dateKey(_selectedDay)]!.text!.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Container(
+            decoration: AppDecorations.card(),
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.edit_note_rounded, size: 18, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text('Note', style: AppTextStyles.h4()),
+              ]),
+              const SizedBox(height: 10),
+              Text(_entryMap[_dateKey(_selectedDay)]!.text!,
+                  style: AppTextStyles.body(color: AppColors.textDark)),
             ]),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _journalCtrl,
-              maxLines: 4,
-              decoration: InputDecoration(
-                hintText: _isToday
-                    ? 'Any shifts in mood or physical symptoms today?'
-                    : 'Notes for this day...',
-                hintStyle: AppTextStyles.body(color: AppColors.textLight),
-                border: InputBorder.none,
-                fillColor: Colors.transparent,
-                filled: true,
-              ),
-              style: AppTextStyles.body(color: AppColors.textDark),
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElevatedButton(
-                onPressed: _saveEntry,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-                child: Text('Save Entry', style: AppTextStyles.label(color: Colors.white)),
-              ),
-            ),
-          ]),
-        ),
+          ),
+        ],
 
         // Dose change on this day
         if (_doseChangeForDay(_selectedDay) != null) ...[
