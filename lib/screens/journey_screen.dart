@@ -87,14 +87,34 @@ class _JourneyScreenState extends State<JourneyScreen> {
     }
   }
 
-  bool _isDoseChangeDay(DateTime day) {
+  bool _isDoseChangeDay(DateTime day) => _doseChangeForDay(day) != null;
+
+  /// Returns the new dose if [day] is a dose change day, else null.
+  double? _doseChangeForDay(DateTime day) {
     final plan = _taperPlan;
-    if (plan == null || plan.status == 'hold') return false;
+    if (plan == null || plan.status == 'hold') return null;
     for (int i = 1; i < plan.steps.length; i++) {
       final d = plan.stepDate(i);
-      if (d.year == day.year && d.month == day.month && d.day == day.day) return true;
+      if (d.year == day.year && d.month == day.month && d.day == day.day) {
+        return plan.steps[i];
+      }
     }
-    return false;
+    return null;
+  }
+
+  /// Returns all upcoming dose changes from today onwards.
+  List<({DateTime date, double dose, int step})> get _upcomingDoseChanges {
+    final plan = _taperPlan;
+    if (plan == null || plan.status == 'hold') return [];
+    final today = DateTime.now();
+    final results = <({DateTime date, double dose, int step})>[];
+    for (int i = 1; i < plan.steps.length; i++) {
+      final d = plan.stepDate(i);
+      if (!d.isBefore(DateTime(today.year, today.month, today.day))) {
+        results.add((date: d, dose: plan.steps[i], step: i));
+      }
+    }
+    return results;
   }
 
   Future<void> _loadEntryForDay(DateTime day) async {
@@ -486,6 +506,34 @@ class _JourneyScreenState extends State<JourneyScreen> {
           ]),
         ),
 
+        // Dose change on this day
+        if (_doseChangeForDay(_selectedDay) != null) ...[
+          const SizedBox(height: 16),
+          Container(
+            decoration: AppDecorations.gradientCard(),
+            padding: const EdgeInsets.all(16),
+            child: Row(children: [
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.arrow_downward_rounded, color: AppColors.primary, size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('DOSE CHANGE', style: AppTextStyles.caption(color: AppColors.primary).copyWith(letterSpacing: 0.8)),
+                Text(
+                  'Switch to ${_doseChangeForDay(_selectedDay)}mg ${_taperPlan?.medicationName ?? ''}',
+                  style: AppTextStyles.label(color: AppColors.textDark),
+                ),
+                Text('As per your Guided Taper Plan', style: AppTextStyles.bodySmall()),
+              ])),
+            ]),
+          ),
+        ],
+
         // Appointments on this day
         if (dayAppts.isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -560,6 +608,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
     // Upcoming only
     final sortedAppts = _upcomingAppointments;
     final allMeds = _upcomingReminders;
+    final doseChanges = _upcomingDoseChanges;
 
     // Journal entries with text, today onwards, newest first
     final today = DateTime.now();
@@ -573,6 +622,58 @@ class _JourneyScreenState extends State<JourneyScreen> {
 
     return CustomScrollView(
       slivers: [
+        // Dose changes section
+        if (doseChanges.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              child: Container(
+                decoration: AppDecorations.card(),
+                padding: const EdgeInsets.all(16),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    const Icon(Icons.arrow_downward_rounded, size: 18, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Text('Dose Changes', style: AppTextStyles.h4()),
+                  ]),
+                  const SizedBox(height: 12),
+                  ...doseChanges.take(10).map((e) => Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE8DDD0)),
+                    ),
+                    child: Row(children: [
+                      Container(
+                        width: 44, padding: const EdgeInsets.symmetric(vertical: 6),
+                        decoration: BoxDecoration(color: AppColors.primarySoft, borderRadius: BorderRadius.circular(8)),
+                        child: Column(children: [
+                          Text(DateFormat('MMM').format(e.date).toUpperCase(),
+                              style: AppTextStyles.caption(color: AppColors.primary).copyWith(letterSpacing: 0.5)),
+                          Text('${e.date.day}', style: AppTextStyles.h4(color: AppColors.primary)),
+                        ]),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Switch to ${e.dose}mg', style: AppTextStyles.label(color: AppColors.textDark)),
+                        Text(_taperPlan?.medicationName ?? '', style: AppTextStyles.bodySmall()),
+                      ])),
+                      Text('Step ${e.step + 1}', style: AppTextStyles.caption(color: AppColors.textLight)),
+                    ]),
+                  )),
+                  if (doseChanges.length > 10)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text('+ ${doseChanges.length - 10} more…',
+                          style: AppTextStyles.body(color: AppColors.textLight)),
+                    ),
+                ]),
+              ),
+            ),
+          ),
+
         // Appointments section
         SliverToBoxAdapter(
           child: Padding(
