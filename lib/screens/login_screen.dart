@@ -66,7 +66,7 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             const SizedBox(height: 16),
 
-            const Icon(Icons.eco_rounded, size: 48, color: AppColors.primary),
+            Image.asset('assets/images/icon.png', width: 48, height: 48, color: AppColors.primary),
             const SizedBox(height: 24),
 
             Text('Welcome back.', style: AppTextStyles.h2()),
