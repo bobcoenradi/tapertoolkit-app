@@ -1086,7 +1086,8 @@ class _JourneyScreenState extends State<JourneyScreen> {
   void _showAddMedSheet() {
     final titleCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
-    bool remindMe   = false;
+    bool remindMe       = false;
+    DateTime? pickedDate;
 
     showModalBottomSheet(
       context: context,
@@ -1112,6 +1113,51 @@ class _JourneyScreenState extends State<JourneyScreen> {
               _sheetField(titleCtrl, 'Reminder title (e.g. Order Sertraline 50mg)'),
               const SizedBox(height: 12),
               _sheetField(notesCtrl, 'Notes (optional)'),
+              const SizedBox(height: 16),
+              // Date picker
+              GestureDetector(
+                onTap: () async {
+                  final d = await showDatePicker(
+                    context: ctx,
+                    initialDate: pickedDate ?? DateTime.now().add(const Duration(days: 1)),
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+                    builder: (c, child) => Theme(
+                      data: ThemeData(colorScheme: const ColorScheme.light(primary: AppColors.primary)),
+                      child: child!,
+                    ),
+                  );
+                  if (d != null) setModal(() => pickedDate = d);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: pickedDate != null ? AppColors.primarySoft : const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: pickedDate != null ? AppColors.primary.withValues(alpha: 0.3) : AppColors.border,
+                    ),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.calendar_today_outlined, size: 16,
+                        color: pickedDate != null ? AppColors.primary : AppColors.textLight),
+                    const SizedBox(width: 10),
+                    Text(
+                      pickedDate != null
+                          ? DateFormat('EEE, d MMM yyyy').format(pickedDate!)
+                          : 'Set a date (optional)',
+                      style: AppTextStyles.label(
+                          color: pickedDate != null ? AppColors.primary : AppColors.textLight),
+                    ),
+                    const Spacer(),
+                    if (pickedDate != null)
+                      GestureDetector(
+                        onTap: () => setModal(() => pickedDate = null),
+                        child: const Icon(Icons.close_rounded, size: 16, color: AppColors.textLight),
+                      ),
+                  ]),
+                ),
+              ),
               const SizedBox(height: 16),
               GestureDetector(
                 onTap: () => setModal(() => remindMe = !remindMe),
@@ -1142,6 +1188,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
                       name: titleCtrl.text.trim(),
                       dosage: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
                       ordered: false,
+                      refillNeededBy: pickedDate,
                       status: remindMe ? 'needed' : 'noted',
                     );
                     await FirestoreService.saveMedReminder(med);
