@@ -279,14 +279,13 @@ class FirestoreService {
 
   // ─── Admin ────────────────────────────────────────────────────────────────
 
-  static Future<List<Map<String, dynamic>>> searchUsersByNickname(String query) async {
-    final snap = await _db
-        .collection('users')
-        .where('nickname', isGreaterThanOrEqualTo: query)
-        .where('nickname', isLessThanOrEqualTo: '$query\uf8ff')
-        .limit(20)
-        .get();
-    return snap.docs.map((d) => {'uid': d.id, ...d.data()}).toList();
+  static Future<({List<Map<String, dynamic>> users, DocumentSnapshot? lastDoc})>
+      fetchUsersPaginated({int pageSize = 50, DocumentSnapshot? lastDoc}) async {
+    Query q = _db.collection('users').orderBy('nickname').limit(pageSize);
+    if (lastDoc != null) q = q.startAfterDocument(lastDoc);
+    final snap = await q.get();
+    final users = snap.docs.map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>}).toList();
+    return (users: users, lastDoc: snap.docs.isEmpty ? null : snap.docs.last);
   }
 
   static Future<void> setUserRole(String uid, String role) async {
