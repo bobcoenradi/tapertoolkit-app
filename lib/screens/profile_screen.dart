@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../models/user_profile_model.dart';
 import '../services/auth_service.dart';
+import '../services/firestore_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -93,6 +94,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         avatarUrl: avatarUrl,
       );
       await AuthService.updateProfile(updated);
+
+      // Backfill photo URL on all existing posts/comments by this user
+      if (avatarUrl != null) {
+        await FirestoreService.backfillAuthorPhoto(
+          nickname: updated.nickname,
+          authorPhotoUrl: avatarUrl,
+        );
+      }
 
       if (mounted) {
         setState(() => _profile = updated);

@@ -72,6 +72,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _navigatorKeys[index].currentState?.popUntil((route) => route.isFirst);
     if (index != _currentNavIndex) {
       setState(() => _currentNavIndex = index);
+      // Reload profile whenever switching to dashboard tab
+      if (index == 0) _loadProfile();
     }
   }
 

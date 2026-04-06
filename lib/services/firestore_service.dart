@@ -139,6 +139,34 @@ class FirestoreService {
     return snap.docs.map((d) => d.data()).toList();
   }
 
+  // ─── Backfill author photo on existing posts & comments ──────────────────
+
+  static Future<void> backfillAuthorPhoto({
+    required String nickname,
+    required String authorPhotoUrl,
+  }) async {
+    // Update all posts by this nickname
+    final postSnap = await _db
+        .collection('communityPosts')
+        .where('nickname', isEqualTo: nickname)
+        .get();
+
+    final batch = _db.batch();
+    for (final doc in postSnap.docs) {
+      batch.update(doc.reference, {'authorPhotoUrl': authorPhotoUrl});
+
+      // Update all comments inside each post by this nickname
+      final commentSnap = await doc.reference
+          .collection('comments')
+          .where('nickname', isEqualTo: nickname)
+          .get();
+      for (final c in commentSnap.docs) {
+        batch.update(c.reference, {'authorPhotoUrl': authorPhotoUrl});
+      }
+    }
+    await batch.commit();
+  }
+
   // ─── Community posts ──────────────────────────────────────────────────────
 
   static Future<String> createPost({

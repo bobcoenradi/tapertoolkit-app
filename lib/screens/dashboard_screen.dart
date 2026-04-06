@@ -43,7 +43,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void didUpdateWidget(DashboardScreen old) {
     super.didUpdateWidget(old);
     if (old.profile != widget.profile) {
-      _localProfile = widget.profile;
+      setState(() => _localProfile = widget.profile);
     }
   }
 
