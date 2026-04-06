@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../services/firestore_service.dart';
 import '../models/journal_entry_model.dart';
+import '../models/taper_plan_model.dart';
 
 class JourneyScreen extends StatefulWidget {
   const JourneyScreen({super.key});
@@ -19,6 +20,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
   Map<String, JournalEntry> _entryMap = {};
   List<Appointment> _appointments = [];
   List<MedReminder> _meds = [];
+  TaperPlan? _taperPlan;
   bool _loading = true;
 
   final _journalCtrl = TextEditingController();
@@ -68,14 +70,27 @@ class _JourneyScreenState extends State<JourneyScreen> {
     final entries = await FirestoreService.fetchJournalEntries();
     final appts  = await FirestoreService.fetchUpcomingAppointments();
     final meds   = await FirestoreService.fetchMedReminders();
+    final plan   = await FirestoreService.fetchActiveTaperPlan();
     if (!mounted) return;
     setState(() {
       _entryMap     = {for (final e in entries) e.dateKey: e};
       _appointments = appts;
       _meds         = meds;
+      _taperPlan    = plan;
       _loading      = false;
     });
     _loadEntryForDay(_selectedDay);
+  }
+
+  /// Returns true if this day is a dose change day in the active taper plan.
+  bool _isDoseChangeDay(DateTime day) {
+    final plan = _taperPlan;
+    if (plan == null || plan.status == 'hold') return false;
+    for (int i = 1; i < plan.steps.length; i++) {
+      final d = plan.stepDate(i);
+      if (d.year == day.year && d.month == day.month && d.day == day.day) return true;
+    }
+    return false;
   }
 
   Future<void> _loadEntryForDay(DateTime day) async {
@@ -219,26 +234,45 @@ class _JourneyScreenState extends State<JourneyScreen> {
     else if (moodColor != null) bgColor = moodColor;
     else if (isToday) bgColor = AppColors.primary.withOpacity(0.15);
 
+    final isDoseChange = _isDoseChangeDay(day);
+
     return Center(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: bgColor,
-          shape: BoxShape.circle,
-          border: isToday && !isSelected && moodColor == null
-              ? Border.all(color: AppColors.primary, width: 1.5)
-              : null,
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          '${day.day}',
-          style: AppTextStyles.body(color: textColor).copyWith(
-            fontWeight: isToday || isSelected ? FontWeight.w600 : FontWeight.normal,
-            fontSize: 13,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: bgColor,
+              shape: BoxShape.circle,
+              border: isToday && !isSelected && moodColor == null
+                  ? Border.all(color: AppColors.primary, width: 1.5)
+                  : null,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              '${day.day}',
+              style: AppTextStyles.body(color: textColor).copyWith(
+                fontWeight: isToday || isSelected ? FontWeight.w600 : FontWeight.normal,
+                fontSize: 13,
+              ),
+            ),
           ),
-        ),
+          // Dose change dot
+          if (isDoseChange)
+            Container(
+              width: 5, height: 5,
+              margin: const EdgeInsets.only(top: 2),
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+              ),
+            )
+          else
+            const SizedBox(height: 7),
+        ],
       ),
     );
   }

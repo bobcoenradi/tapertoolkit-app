@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../models/user_profile_model.dart';
 import '../models/journal_entry_model.dart';
+import '../models/taper_plan_model.dart';
 import '../services/sanity_service.dart';
 import '../services/firestore_service.dart';
 import '../services/auth_service.dart';
@@ -27,6 +28,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _loadingContent = true;
   Appointment? _nextAppointment;
   MedReminder? _nextReminder;
+  TaperPlan? _taperPlan;
+  bool _doseTakenToday = false;
+  bool _showDoseConfirm = false; // shows checkbox after tapping Log Now
 
   // 5 moods — red → orange → yellow → light-green → green
   static const _moods = [
@@ -45,6 +49,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _refreshProfile();
     _loadTodayMood();
     _loadReminders();
+    _loadTaperData();
   }
 
   Future<void> _loadReminders() async {
@@ -53,10 +58,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (!mounted) return;
     setState(() {
       _nextAppointment = appts.isNotEmpty ? appts.first : null;
-      // Show first unordered reminder, or just first if all ordered
       _nextReminder = meds.isNotEmpty
           ? (meds.firstWhere((m) => !m.ordered, orElse: () => meds.first))
           : null;
+    });
+  }
+
+  Future<void> _loadTaperData() async {
+    final plan  = await FirestoreService.fetchActiveTaperPlan();
+    final taken = await FirestoreService.isDoseTakenToday();
+    if (!mounted) return;
+    setState(() {
+      _taperPlan = plan;
+      _doseTakenToday = taken;
     });
   }
 
@@ -196,7 +210,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Expanded(
                 child: Image.asset(
                   'assets/images/logo.png',
-                  height: 52,
+                  height: 36,
                   alignment: Alignment.centerLeft,
                   fit: BoxFit.contain,
                 ),
@@ -309,57 +323,100 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildReminders(UserProfile? profile) {
-    final med = profile?.medication ?? 'Sertraline';
-    final dose = profile?.currentDose ?? 12.5;
+    // Prefer taper plan data; fall back to profile
+    final hasPlan = _taperPlan != null;
+    final med  = hasPlan ? _taperPlan!.medicationName : (profile?.medication ?? 'Your medication');
+    final dose = hasPlan ? _taperPlan!.currentDose    : (profile?.currentDose ?? 0.0);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text("Today's Reminders", style: AppTextStyles.h4()),
-              TextButton(
-                onPressed: () {},
-                child: Text('View Calendar', style: AppTextStyles.label(color: AppColors.primary)),
-              ),
-            ],
-          ),
+          Text("Today's Reminders", style: AppTextStyles.h4()),
           const SizedBox(height: 12),
 
           // Morning dose card
-          Container(
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
             padding: const EdgeInsets.all(16),
             decoration: AppDecorations.gradientCard(),
-            child: Row(
-              children: [
-                const Icon(Icons.medication_outlined, color: AppColors.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('MORNING DOSE', style: AppTextStyles.caption(color: AppColors.primary).copyWith(letterSpacing: 1)),
-                      Text('${dose}mg', style: AppTextStyles.h3(color: AppColors.textDark)),
+            child: _doseTakenToday
+                // ── Taken state ──────────────────────────────────────────
+                ? Row(children: [
+                    const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('MORNING DOSE', style: AppTextStyles.caption(color: AppColors.primary)
+                          .copyWith(letterSpacing: 1)),
+                      Text('${dose}mg taken today ✓',
+                          style: AppTextStyles.label(color: AppColors.textDark)),
                       Text(med, style: AppTextStyles.body(color: AppColors.textMid)),
-                    ],
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: () => FirestoreService.logDose(dose),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    elevation: 0,
-                  ),
-                  child: Text('Log\nNow', style: AppTextStyles.caption(color: Colors.white), textAlign: TextAlign.center),
-                ),
-              ],
-            ),
+                    ])),
+                    TextButton(
+                      onPressed: () => setState(() { _doseTakenToday = false; _showDoseConfirm = false; }),
+                      child: Text('Undo', style: AppTextStyles.caption(color: AppColors.textLight)),
+                    ),
+                  ])
+                : _showDoseConfirm
+                    // ── Checkbox confirm state ────────────────────────────
+                    ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          const Icon(Icons.medication_outlined, color: AppColors.primary),
+                          const SizedBox(width: 12),
+                          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text('MORNING DOSE', style: AppTextStyles.caption(color: AppColors.primary)
+                                .copyWith(letterSpacing: 1)),
+                            Text('${dose}mg  •  $med',
+                                style: AppTextStyles.label(color: AppColors.textDark)),
+                          ]),
+                        ]),
+                        const SizedBox(height: 14),
+                        GestureDetector(
+                          onTap: () async {
+                            setState(() => _doseTakenToday = true);
+                            await FirestoreService.logDoseTaken(dose);
+                          },
+                          child: Row(children: [
+                            Container(
+                              width: 22, height: 22,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: AppColors.primary, width: 1.5),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text("I've already taken today's dose",
+                                style: AppTextStyles.label(color: AppColors.textDark)),
+                          ]),
+                        ),
+                      ])
+                    // ── Default state ─────────────────────────────────────
+                    : Row(children: [
+                        const Icon(Icons.medication_outlined, color: AppColors.primary),
+                        const SizedBox(width: 12),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('MORNING DOSE', style: AppTextStyles.caption(color: AppColors.primary)
+                              .copyWith(letterSpacing: 1)),
+                          Text(dose > 0 ? '${dose}mg' : '—',
+                              style: AppTextStyles.h3(color: AppColors.textDark)),
+                          Text(med, style: AppTextStyles.body(color: AppColors.textMid)),
+                        ])),
+                        if (dose > 0)
+                          ElevatedButton(
+                            onPressed: () => setState(() => _showDoseConfirm = true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary, foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              elevation: 0,
+                            ),
+                            child: Text('Log\nNow',
+                                style: AppTextStyles.caption(color: Colors.white),
+                                textAlign: TextAlign.center),
+                          ),
+                      ]),
           ),
 
           const SizedBox(height: 12),

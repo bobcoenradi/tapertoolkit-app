@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/journal_entry_model.dart';
+import '../models/taper_plan_model.dart';
 
 class FirestoreService {
   static final _db = FirebaseFirestore.instance;
@@ -137,6 +138,81 @@ class FirestoreService {
         .orderBy('loggedAt')
         .get();
     return snap.docs.map((d) => d.data()).toList();
+  }
+
+  // ─── Taper plans ──────────────────────────────────────────────────────────
+
+  static Future<String> saveTaperPlan(TaperPlan plan) async {
+    final uid = _uid;
+    if (uid == null) return '';
+    final ref = plan.id.isEmpty
+        ? _db.collection('users').doc(uid).collection('taperPlans').doc()
+        : _db.collection('users').doc(uid).collection('taperPlans').doc(plan.id);
+    await ref.set(plan.toMap());
+    return ref.id;
+  }
+
+  static Future<TaperPlan?> fetchActiveTaperPlan() async {
+    final uid = _uid;
+    if (uid == null) return null;
+    final snap = await _db
+        .collection('users')
+        .doc(uid)
+        .collection('taperPlans')
+        .where('status', whereIn: ['active', 'hold'])
+        .orderBy('startDate', descending: true)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    return TaperPlan.fromMap(snap.docs.first.data(), snap.docs.first.id);
+  }
+
+  static Future<void> updateTaperPlanStatus(
+      String planId, String status, int holdAtStepIndex) async {
+    final uid = _uid;
+    if (uid == null) return;
+    await _db
+        .collection('users')
+        .doc(uid)
+        .collection('taperPlans')
+        .doc(planId)
+        .update({'status': status, 'holdAtStepIndex': holdAtStepIndex});
+  }
+
+  // Mark today's dose as taken (separate from the taper progress doseLog)
+  static Future<void> logDoseTaken(double dose) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final today = DateTime.now();
+    final key =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    await _db
+        .collection('users')
+        .doc(uid)
+        .collection('doseTaken')
+        .doc(key)
+        .set({'dose': dose, 'takenAt': today.toIso8601String()});
+    // Also write to the time-series doseLog for the chart
+    await _db
+        .collection('users')
+        .doc(uid)
+        .collection('doseLog')
+        .add({'dose': dose, 'loggedAt': today.toIso8601String()});
+  }
+
+  static Future<bool> isDoseTakenToday() async {
+    final uid = _uid;
+    if (uid == null) return false;
+    final today = DateTime.now();
+    final key =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    final doc = await _db
+        .collection('users')
+        .doc(uid)
+        .collection('doseTaken')
+        .doc(key)
+        .get();
+    return doc.exists;
   }
 
   // ─── Backfill author photo on existing posts & comments ──────────────────
