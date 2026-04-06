@@ -205,6 +205,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
   // ─── Build ──────────────────────────────────────────────────────────────────
 
   void _showAddPicker() {
+    final preselected = _tab == 0 ? _selectedDay : DateTime.now();
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
@@ -237,7 +238,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
                 subtitle: 'Add a journal note for a specific day',
                 onTap: () {
                   Navigator.pop(ctx);
-                  _showAddNoteSheet();
+                  _showAddNoteSheet(preselected);
                 },
               ),
               const SizedBox(height: 12),
@@ -249,7 +250,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
                 subtitle: 'Medication order, refill, or personal reminder',
                 onTap: () {
                   Navigator.pop(ctx);
-                  _showAddMedSheet();
+                  _showAddMedSheet(preselected);
                 },
               ),
               const SizedBox(height: 12),
@@ -261,7 +262,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
                 subtitle: 'Doctor visit, taper review, or any appointment',
                 onTap: () {
                   Navigator.pop(ctx);
-                  _showAddAppointmentSheet();
+                  _showAddAppointmentSheet(preselected);
                 },
               ),
             ],
@@ -307,8 +308,8 @@ class _JourneyScreenState extends State<JourneyScreen> {
     );
   }
 
-  void _showAddNoteSheet() {
-    DateTime pickedDay = _selectedDay;
+  void _showAddNoteSheet([DateTime? initialDay]) {
+    DateTime pickedDay = initialDay ?? _selectedDay;
     String pickedMood = _mood;
     final textCtrl = TextEditingController(text: _journalCtrl.text);
 
@@ -994,10 +995,10 @@ class _JourneyScreenState extends State<JourneyScreen> {
 
   // ─── Sheets ─────────────────────────────────────────────────────────────────
 
-  void _showAddAppointmentSheet() {
+  void _showAddAppointmentSheet([DateTime? initialDay]) {
     final titleCtrl = TextEditingController();
     final typeCtrl  = TextEditingController();
-    DateTime pickedDate = DateTime.now().add(const Duration(days: 1));
+    DateTime pickedDate = initialDay ?? DateTime.now().add(const Duration(days: 1));
     TimeOfDay pickedTime = const TimeOfDay(hour: 9, minute: 0);
 
     showModalBottomSheet(
@@ -1083,11 +1084,11 @@ class _JourneyScreenState extends State<JourneyScreen> {
     );
   }
 
-  void _showAddMedSheet() {
+  void _showAddMedSheet([DateTime? initialDay]) {
     final titleCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
     bool remindMe       = false;
-    DateTime? pickedDate;
+    DateTime? pickedDate = initialDay;
 
     showModalBottomSheet(
       context: context,
