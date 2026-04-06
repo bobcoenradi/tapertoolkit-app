@@ -29,9 +29,7 @@ class _TaperWizardScreenState extends State<TaperWizardScreen> {
   final _crossMedCtrl = TextEditingController();
   final _crossTargetCtrl = TextEditingController(text: '0');
 
-  // Step 4
-  DateTime _aimEndDate = DateTime(
-      DateTime.now().year + 1, DateTime.now().month);
+  // Step 4 — interval = pillsPerScript; aimEndDate is computed
   int _pillsPerScript = 28;
   final List<int> _pillOptions = [14, 28, 30];
 
@@ -95,13 +93,14 @@ class _TaperWizardScreenState extends State<TaperWizardScreen> {
   List<double> get _previewSteps =>
       TaperPlan.generateSteps(_startDose, _targetDose);
 
-  int get _intervalDays {
-    if (_startDose <= 0) return 14;
+  // The interval IS the pills per script — one bottle = one interval
+  int get _intervalDays => _pillsPerScript;
+
+  // Aimed end date is fully computed: today + (numTransitions × interval)
+  DateTime get _computedEndDate {
     final steps = _previewSteps;
-    if (steps.length <= 1) return 14;
-    final totalDays = _aimEndDate.difference(DateTime.now()).inDays;
-    final interval = (totalDays / (steps.length - 1)).floor();
-    return interval.clamp(7, 365);
+    final totalDays = (steps.length - 1) * _pillsPerScript;
+    return DateTime.now().add(Duration(days: totalDays));
   }
 
   Future<void> _generatePlan() async {
@@ -113,14 +112,14 @@ class _TaperWizardScreenState extends State<TaperWizardScreen> {
 
       final plan = TaperPlan(
         id: '',
-        uid: '',
+        uid: '',          // Firestore service fills actual uid on save
         medicationName: _medCtrl.text.trim(),
         startDose: _startDose,
         targetDose: _targetDose,
         pillsPerScript: _pillsPerScript,
         startDate: DateTime(now.year, now.month, now.day),
-        aimEndDate: _aimEndDate,
-        intervalDays: interval,
+        aimEndDate: _computedEndDate,
+        intervalDays: interval,   // = pillsPerScript
         crossTaper: _crossTaper,
         crossTaperMed: _crossTaper ? _crossMedCtrl.text.trim() : null,
         crossTaperTargetDose: _crossTaper
@@ -132,23 +131,18 @@ class _TaperWizardScreenState extends State<TaperWizardScreen> {
 
       // Auto-generate order reminders for the next 6 dose changes
       final medName = _medCtrl.text.trim();
-      final uid = '';
-      final remindersToCreate = <MedReminder>[];
       for (int i = 1; i < steps.length && i <= 6; i++) {
         final changeDate = now.add(Duration(days: i * interval));
         final orderDate = changeDate.subtract(const Duration(days: 7));
-        remindersToCreate.add(MedReminder(
+        await FirestoreService.saveMedReminder(MedReminder(
           id: '',
-          uid: uid,
+          uid: '',
           name: 'Order ${steps[i]}mg $medName',
           dosage: 'Dose changes ${DateFormat('d MMM').format(changeDate)} — order by ${DateFormat('d MMM').format(orderDate)}',
           ordered: false,
           refillNeededBy: orderDate,
           status: 'needed',
         ));
-      }
-      for (final r in remindersToCreate) {
-        await FirestoreService.saveMedReminder(r);
       }
 
       if (mounted) Navigator.of(context).pop(true);
@@ -423,30 +417,6 @@ class _TaperWizardScreenState extends State<TaperWizardScreen> {
             style: AppTextStyles.body()),
         const SizedBox(height: 24),
 
-        // Aimed end date
-        Text('Aimed completion date', style: AppTextStyles.label()),
-        const SizedBox(height: 4),
-        Text('Approximate month and year you would like to be off the medication.',
-            style: AppTextStyles.bodySmall()),
-        const SizedBox(height: 10),
-        GestureDetector(
-          onTap: _pickAimDate,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: AppDecorations.card(),
-            child: Row(children: [
-              const Icon(Icons.calendar_month_outlined, color: AppColors.primary, size: 18),
-              const SizedBox(width: 12),
-              Text(DateFormat('MMMM yyyy').format(_aimEndDate),
-                  style: AppTextStyles.label(color: AppColors.textDark)),
-              const Spacer(),
-              const Icon(Icons.chevron_right, color: AppColors.textLight, size: 18),
-            ]),
-          ),
-        ),
-
-        const SizedBox(height: 24),
-
         // Pills per script
         Text('Tablets per prescription', style: AppTextStyles.label()),
         const SizedBox(height: 4),
@@ -507,9 +477,8 @@ class _TaperWizardScreenState extends State<TaperWizardScreen> {
               const SizedBox(height: 8),
               _previewRow('Steps', '${_previewSteps.length - 1} reductions'),
               _previewRow('Interval', '$_intervalDays days per step'),
-              _previewRow('Est. end', DateFormat('MMM yyyy').format(_aimEndDate)),
-              _previewRow('Script covers',
-                  '${(_pillsPerScript / _intervalDays).toStringAsFixed(1)} steps'),
+              _previewRow('Est. end', DateFormat('MMM yyyy').format(_computedEndDate)),
+              _previewRow('Script covers', '$_pillsPerScript days'),
             ]),
           ),
         ],
@@ -554,7 +523,7 @@ class _TaperWizardScreenState extends State<TaperWizardScreen> {
             _summaryRow(Icons.stacked_bar_chart, '${steps.length - 1} steps at ~10% reduction'),
             _summaryRow(Icons.timer_outlined, '$interval days per step'),
             _summaryRow(Icons.calendar_today_outlined,
-                'Est. complete ${DateFormat('MMMM yyyy').format(_aimEndDate)}'),
+                'Est. complete ${DateFormat('MMMM yyyy').format(_computedEndDate)}'),
             _summaryRow(Icons.local_pharmacy_outlined, '$_pillsPerScript tablets per script'),
             if (_crossTaper && _crossMedCtrl.text.isNotEmpty)
               _summaryRow(Icons.swap_horiz, 'Cross tapering to ${_crossMedCtrl.text.trim()}'),
@@ -562,10 +531,10 @@ class _TaperWizardScreenState extends State<TaperWizardScreen> {
         ),
         const SizedBox(height: 20),
 
-        // First 6 steps preview
-        Text('First steps', style: AppTextStyles.h4()),
+        // All steps
+        Text('All steps (${steps.length - 1} reductions)', style: AppTextStyles.h4()),
         const SizedBox(height: 10),
-        ...steps.take(6).toList().asMap().entries.map((e) {
+        ...steps.asMap().entries.map((e) {
           final date = now.add(Duration(days: e.key * interval));
           return Container(
             margin: const EdgeInsets.only(bottom: 8),
@@ -591,12 +560,6 @@ class _TaperWizardScreenState extends State<TaperWizardScreen> {
             ]),
           );
         }),
-        if (steps.length > 6)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text('+ ${steps.length - 6} more steps…',
-                style: AppTextStyles.body(color: AppColors.textLight)),
-          ),
       ]),
     );
   }
@@ -611,83 +574,6 @@ class _TaperWizardScreenState extends State<TaperWizardScreen> {
   );
 
   // ─── Pickers ─────────────────────────────────────────────────────────────
-
-  Future<void> _pickAimDate() async {
-    // Month/year picker using a simple scroll dialog
-    int selectedYear = _aimEndDate.year;
-    int selectedMonth = _aimEndDate.month;
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: Text('Aimed completion', style: AppTextStyles.h4()),
-        content: StatefulBuilder(
-          builder: (ctx, set) => SizedBox(
-            width: 280,
-            height: 200,
-            child: Row(children: [
-              // Month
-              Expanded(
-                child: ListWheelScrollView.useDelegate(
-                  itemExtent: 40,
-                  controller: FixedExtentScrollController(initialItem: selectedMonth - 1),
-                  physics: const FixedExtentScrollPhysics(),
-                  onSelectedItemChanged: (i) => set(() => selectedMonth = i + 1),
-                  childDelegate: ListWheelChildBuilderDelegate(
-                    childCount: 12,
-                    builder: (_, i) => Center(
-                      child: Text(DateFormat('MMM').format(DateTime(2000, i + 1)),
-                          style: AppTextStyles.body(
-                            color: selectedMonth == i + 1 ? AppColors.primary : AppColors.textLight,
-                          )),
-                    ),
-                  ),
-                ),
-              ),
-              // Year
-              Expanded(
-                child: ListWheelScrollView.useDelegate(
-                  itemExtent: 40,
-                  controller: FixedExtentScrollController(
-                      initialItem: selectedYear - DateTime.now().year),
-                  physics: const FixedExtentScrollPhysics(),
-                  onSelectedItemChanged: (i) => set(() => selectedYear = DateTime.now().year + i),
-                  childDelegate: ListWheelChildBuilderDelegate(
-                    childCount: 10,
-                    builder: (_, i) {
-                      final y = DateTime.now().year + i;
-                      return Center(
-                        child: Text('$y',
-                            style: AppTextStyles.body(
-                              color: selectedYear == y ? AppColors.primary : AppColors.textLight,
-                            )),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ]),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: AppTextStyles.label(color: AppColors.textLight)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() => _aimEndDate = DateTime(selectedYear, selectedMonth));
-              Navigator.pop(ctx);
-            },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary, foregroundColor: Colors.white, elevation: 0),
-            child: Text('Confirm', style: AppTextStyles.label(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
 
   Future<void> _enterCustomPills() async {
     final ctrl = TextEditingController();
