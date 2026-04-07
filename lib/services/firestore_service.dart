@@ -186,6 +186,24 @@ class FirestoreService {
     return plans.isEmpty ? null : plans.first;
   }
 
+  /// Adjust the current dose — resets startDose and startDate to today so
+  /// the remaining schedule regenerates from the new dose.
+  static Future<void> adjustTaperPlanDose(String planId, double newDose) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final today = DateTime.now();
+    await _db
+        .collection('users')
+        .doc(uid)
+        .collection('taperPlans')
+        .doc(planId)
+        .update({
+      'startDose': newDose,
+      'startDate': DateTime(today.year, today.month, today.day).toIso8601String(),
+      'holdAtStepIndex': 0,
+    });
+  }
+
   static Future<void> updateTaperPlanStatus(
       String planId, String status, int holdAtStepIndex) async {
     final uid = _uid;

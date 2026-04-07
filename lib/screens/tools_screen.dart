@@ -46,6 +46,110 @@ class _ToolsScreenState extends State<ToolsScreen> {
     if (created == true) _load();
   }
 
+  void _showFullSchedule(TaperPlan plan) {
+    final steps = plan.steps;
+    final now = plan.startDate;
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.85,
+        maxChildSize: 0.95,
+        minChildSize: 0.4,
+        builder: (ctx, scrollCtrl) => Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+              )),
+              const SizedBox(height: 16),
+              Text('Full Schedule', style: AppTextStyles.h3()),
+              Text('${steps.length - 1} reductions  •  ${plan.medicationName}',
+                  style: AppTextStyles.body(color: AppColors.textMid)),
+              const SizedBox(height: 16),
+            ]),
+          ),
+          Expanded(
+            child: ListView.builder(
+              controller: scrollCtrl,
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+              itemCount: steps.length,
+              itemBuilder: (ctx, i) {
+                final date = now.add(Duration(days: i * plan.intervalDays));
+                final isCurrent = i == plan.currentStepIndex;
+                final isPast = i < plan.currentStepIndex;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isCurrent ? AppColors.primarySoft : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isCurrent ? AppColors.primary : const Color(0xFFE8DDD0),
+                    ),
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(
+                        color: isCurrent ? AppColors.primary
+                            : isPast ? AppColors.border
+                            : AppColors.primarySoft,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(child: Text('${i + 1}',
+                          style: AppTextStyles.caption(
+                              color: isCurrent ? Colors.white
+                                  : isPast ? AppColors.textLight
+                                  : AppColors.primary))),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text('${steps[i]}mg',
+                        style: AppTextStyles.label(
+                            color: isPast ? AppColors.textLight : AppColors.textDark))),
+                    Text(
+                      i == 0 ? 'Start' : DateFormat('d MMM yyyy').format(date),
+                      style: AppTextStyles.bodySmall(
+                          color: isPast ? AppColors.textLight : null),
+                    ),
+                    if (isCurrent) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text('Now', style: AppTextStyles.caption(color: Colors.white)),
+                      ),
+                    ],
+                  ]),
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _adjustDose(double delta) async {
+    final plan = _plan;
+    if (plan == null) return;
+    final newDose = double.parse(
+        ((plan.currentDose + delta) * 10).round().toString()) / 10.0;
+    if (newDose <= 0) return;
+    await FirestoreService.adjustTaperPlanDose(plan.id, newDose);
+    _load();
+  }
+
   Future<void> _toggleHold() async {
     if (_plan == null) return;
     final isHold = _plan!.status == 'hold';
@@ -202,14 +306,23 @@ class _ToolsScreenState extends State<ToolsScreen> {
 
           const SizedBox(height: 16),
 
-          // Current dose
+          // Current dose with +/- adjustment
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('CURRENT DOSE',
                   style: AppTextStyles.caption(color: AppColors.primary)
                       .copyWith(letterSpacing: 0.8)),
-              Text('${plan.currentDose}mg',
-                  style: AppTextStyles.h1(color: AppColors.textDark)),
+              Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                _doseBtn(Icons.remove, () => _adjustDose(-0.1)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Text('${plan.currentDose}mg',
+                      style: AppTextStyles.h1(color: AppColors.textDark)),
+                ),
+                _doseBtn(Icons.add, () => _adjustDose(0.1)),
+              ]),
+              Text('Tap ±0.1mg to adjust — schedule updates automatically',
+                  style: AppTextStyles.bodySmall()),
             ]),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
               Text('STEP',
@@ -314,7 +427,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
         const SizedBox(width: 12),
         Expanded(
           child: OutlinedButton.icon(
-            onPressed: _openWizard,
+            onPressed: () => _showFullSchedule(plan),
             icon: const Icon(Icons.list_alt_rounded,
                 size: 18, color: AppColors.primary),
             label: Text('Full Schedule',
@@ -332,6 +445,19 @@ class _ToolsScreenState extends State<ToolsScreen> {
       _buildUpcomingSteps(plan),
     ]);
   }
+
+  Widget _doseBtn(IconData icon, VoidCallback onTap) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 32, height: 32,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.7),
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+      ),
+      child: Icon(icon, size: 18, color: AppColors.primary),
+    ),
+  );
 
   Widget _buildUpcomingSteps(TaperPlan plan) {
     final steps = plan.steps;
