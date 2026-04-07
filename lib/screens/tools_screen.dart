@@ -422,7 +422,61 @@ class _ToolsScreenState extends State<ToolsScreen> {
   // ─── Dose history chart ──────────────────────────────────────────────────
 
   Widget _buildProgressChart() {
-    final hasData = _doseLog.isNotEmpty;
+    final plan = _plan;
+    final hasLog = _doseLog.isNotEmpty;
+    final hasPlan = plan != null;
+
+    if (!hasLog && !hasPlan) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        child: Container(
+          decoration: AppDecorations.card(),
+          padding: const EdgeInsets.all(20),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Dose History', style: AppTextStyles.h4()),
+            const SizedBox(height: 16),
+            Center(child: Text('Log your first dose to see progress',
+                style: AppTextStyles.body())),
+          ]),
+        ),
+      );
+    }
+
+    // Build past spots from doseLog — x = days since plan start (or index if no plan)
+    final origin = plan?.startDate ?? DateTime.now();
+    final List<FlSpot> pastSpots = _doseLog.map((e) {
+      final loggedAt = DateTime.tryParse(e['loggedAt'] as String? ?? '') ?? DateTime.now();
+      final x = loggedAt.difference(origin).inDays.toDouble();
+      final y = (e['dose'] as num).toDouble();
+      return FlSpot(x, y);
+    }).toList()..sort((a, b) => a.x.compareTo(b.x));
+
+    // Build future spots from plan steps — x = days since plan start
+    final List<FlSpot> futureSpots = [];
+    if (hasPlan) {
+      final steps = plan.steps;
+      final currentIdx = plan.currentStepIndex;
+      // Start the dotted line from the current dose at today
+      final todayX = DateTime.now().difference(origin).inDays.toDouble();
+      futureSpots.add(FlSpot(todayX, plan.currentDose));
+      for (int i = currentIdx + 1; i < steps.length; i++) {
+        final x = plan.stepDate(i).difference(origin).inDays.toDouble();
+        futureSpots.add(FlSpot(x, steps[i]));
+      }
+    }
+
+    // Y axis: max = plan startDose or first log, min = 0
+    final allY = [
+      ...pastSpots.map((s) => s.y),
+      ...futureSpots.map((s) => s.y),
+      if (hasPlan) plan.startDose,
+    ];
+    final maxY = allY.isEmpty ? 10.0 : (allY.reduce((a, b) => a > b ? a : b) * 1.1);
+
+    final currentDoseLabel = hasPlan
+        ? '${plan.currentDose}mg'
+        : hasLog ? '${(_doseLog.last['dose'] as num).toStringAsFixed(1)}mg' : '';
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
       child: Container(
@@ -431,41 +485,141 @@ class _ToolsScreenState extends State<ToolsScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('Dose History', style: AppTextStyles.h4()),
-            if (hasData)
-              Text('${(_doseLog.last['dose'] as num).toStringAsFixed(1)}mg',
-                  style: AppTextStyles.h3(color: AppColors.primary)),
+            if (currentDoseLabel.isNotEmpty)
+              Text(currentDoseLabel, style: AppTextStyles.h3(color: AppColors.primary)),
+          ]),
+          const SizedBox(height: 8),
+          // Legend
+          Row(children: [
+            _legendDot(AppColors.primary, solid: true),
+            const SizedBox(width: 6),
+            Text('Logged', style: AppTextStyles.bodySmall()),
+            const SizedBox(width: 16),
+            _legendDot(AppColors.primary.withValues(alpha: 0.5), solid: false),
+            const SizedBox(width: 6),
+            Text('Planned', style: AppTextStyles.bodySmall()),
           ]),
           const SizedBox(height: 16),
           SizedBox(
-            height: 80,
-            child: hasData
-                ? LineChart(_buildChartData())
-                : Center(child: Text('Log your first dose to see progress',
-                    style: AppTextStyles.body())),
+            height: 120,
+            child: LineChart(
+              LineChartData(
+                minY: 0,
+                maxY: maxY,
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: maxY / 4,
+                  getDrawingHorizontalLine: (_) => FlLine(
+                    color: AppColors.border,
+                    strokeWidth: 1,
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 36,
+                      interval: maxY / 4,
+                      getTitlesWidget: (v, _) => Text(
+                        v == 0 ? '0' : '${v.round()}mg',
+                        style: AppTextStyles.bodySmall(),
+                      ),
+                    ),
+                  ),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                ),
+                borderData: FlBorderData(show: false),
+                lineBarsData: [
+                  // Past — solid line
+                  if (pastSpots.isNotEmpty)
+                    LineChartBarData(
+                      spots: pastSpots,
+                      isCurved: false,
+                      color: AppColors.primary,
+                      barWidth: 2.5,
+                      dotData: FlDotData(
+                        show: true,
+                        getDotPainter: (p0, p1, p2, p3) => FlDotCirclePainter(
+                          radius: 3,
+                          color: AppColors.primary,
+                          strokeWidth: 0,
+                          strokeColor: Colors.transparent,
+                        ),
+                      ),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: AppColors.primary.withValues(alpha: 0.08),
+                      ),
+                    ),
+                  // Future — dashed line
+                  if (futureSpots.length > 1)
+                    LineChartBarData(
+                      spots: futureSpots,
+                      isCurved: false,
+                      color: AppColors.primary.withValues(alpha: 0.5),
+                      barWidth: 2,
+                      dashArray: [6, 4],
+                      dotData: FlDotData(
+                        show: true,
+                        getDotPainter: (p0, p1, p2, p3) => FlDotCirclePainter(
+                          radius: 3,
+                          color: AppColors.primary.withValues(alpha: 0.5),
+                          strokeWidth: 0,
+                          strokeColor: Colors.transparent,
+                        ),
+                      ),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: AppColors.primary.withValues(alpha: 0.04),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ]),
       ),
     );
   }
 
-  LineChartData _buildChartData() {
-    final spots = _doseLog.asMap().entries.map((e) =>
-        FlSpot(e.key.toDouble(), (e.value['dose'] as num).toDouble())).toList();
-    return LineChartData(
-      gridData: const FlGridData(show: false),
-      titlesData: const FlTitlesData(show: false),
-      borderData: FlBorderData(show: false),
-      lineBarsData: [LineChartBarData(
-        spots: spots, isCurved: true, color: AppColors.primary, barWidth: 2,
-        dotData: FlDotData(show: true,
-            getDotPainter: (p0, p1, p2, p3) =>
-                FlDotCirclePainter(radius: 3, color: AppColors.primary,
-                    strokeWidth: 0, strokeColor: Colors.transparent)),
-        belowBarData: BarAreaData(show: true,
-            color: AppColors.primary.withValues(alpha: 0.08)),
-      )],
-    );
+  Widget _legendDot(Color color, {required bool solid}) => Row(children: [
+    SizedBox(
+      width: 24, height: 12,
+      child: CustomPaint(painter: _LegendLinePainter(color: color, solid: solid)),
+    ),
+  ]);
+}   // end _ToolsScreenState
+
+class _LegendLinePainter extends CustomPainter {
+  final Color color;
+  final bool solid;
+  const _LegendLinePainter({required this.color, required this.solid});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    if (!solid) {
+      // Draw dashed
+      const dashW = 4.0, gapW = 3.0;
+      double x = 0;
+      while (x < size.width) {
+        canvas.drawLine(Offset(x, size.height / 2),
+            Offset((x + dashW).clamp(0, size.width), size.height / 2), paint);
+        x += dashW + gapW;
+      }
+    } else {
+      canvas.drawLine(Offset(0, size.height / 2), Offset(size.width, size.height / 2), paint);
+    }
   }
+
+  @override
+  bool shouldRepaint(_LegendLinePainter old) => old.color != color || old.solid != solid;
 }
 
 // ─── Full Schedule Sheet ──────────────────────────────────────────────────────
