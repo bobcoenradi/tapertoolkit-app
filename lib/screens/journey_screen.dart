@@ -74,7 +74,9 @@ class _JourneyScreenState extends State<JourneyScreen> {
       final entries = await FirestoreService.fetchJournalEntries();
       final appts   = await FirestoreService.fetchAllAppointments();
       final meds    = await FirestoreService.fetchMedReminders();
-      TaperPlan? plan;
+      // Preserve the existing plan if the fetch fails so calendar data
+      // is never wiped by a transient network error during a reload.
+      TaperPlan? plan = _taperPlan;
       try { plan = await FirestoreService.fetchActiveTaperPlan(); } catch (_) {}
       if (!mounted) return;
       setState(() {
@@ -97,10 +99,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
     final plan = _taperPlan;
     if (plan == null || plan.status == 'hold') return null;
     for (int i = 1; i < plan.steps.length; i++) {
-      final d = plan.stepDate(i);
-      if (d.year == day.year && d.month == day.month && d.day == day.day) {
-        return plan.steps[i];
-      }
+      if (isSameDay(plan.stepDate(i), day)) return plan.steps[i];
     }
     return null;
   }
