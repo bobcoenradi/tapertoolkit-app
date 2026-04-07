@@ -204,6 +204,17 @@ class FirestoreService {
     });
   }
 
+  static Future<void> updateTaperPlanSteps(String planId, List<double> steps) async {
+    final uid = _uid;
+    if (uid == null) return;
+    await _db
+        .collection('users')
+        .doc(uid)
+        .collection('taperPlans')
+        .doc(planId)
+        .update({'customSteps': steps});
+  }
+
   static Future<void> updateTaperPlanStatus(
       String planId, String status, int holdAtStepIndex) async {
     final uid = _uid;

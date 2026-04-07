@@ -47,8 +47,6 @@ class _ToolsScreenState extends State<ToolsScreen> {
   }
 
   void _showFullSchedule(TaperPlan plan) {
-    final steps = plan.steps;
-    final now = plan.startDate;
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
@@ -56,87 +54,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.85,
-        maxChildSize: 0.95,
-        minChildSize: 0.4,
-        builder: (ctx, scrollCtrl) => Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Center(child: Container(
-                width: 36, height: 4,
-                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
-              )),
-              const SizedBox(height: 16),
-              Text('Full Schedule', style: AppTextStyles.h3()),
-              Text('${steps.length - 1} reductions  •  ${plan.medicationName}',
-                  style: AppTextStyles.body(color: AppColors.textMid)),
-              const SizedBox(height: 16),
-            ]),
-          ),
-          Expanded(
-            child: ListView.builder(
-              controller: scrollCtrl,
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-              itemCount: steps.length,
-              itemBuilder: (ctx, i) {
-                final date = now.add(Duration(days: i * plan.intervalDays));
-                final isCurrent = i == plan.currentStepIndex;
-                final isPast = i < plan.currentStepIndex;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: isCurrent ? AppColors.primarySoft : Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isCurrent ? AppColors.primary : const Color(0xFFE8DDD0),
-                    ),
-                  ),
-                  child: Row(children: [
-                    Container(
-                      width: 28, height: 28,
-                      decoration: BoxDecoration(
-                        color: isCurrent ? AppColors.primary
-                            : isPast ? AppColors.border
-                            : AppColors.primarySoft,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(child: Text('${i + 1}',
-                          style: AppTextStyles.caption(
-                              color: isCurrent ? Colors.white
-                                  : isPast ? AppColors.textLight
-                                  : AppColors.primary))),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Text('${steps[i]}mg',
-                        style: AppTextStyles.label(
-                            color: isPast ? AppColors.textLight : AppColors.textDark))),
-                    Text(
-                      i == 0 ? 'Start' : DateFormat('d MMM yyyy').format(date),
-                      style: AppTextStyles.bodySmall(
-                          color: isPast ? AppColors.textLight : null),
-                    ),
-                    if (isCurrent) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text('Now', style: AppTextStyles.caption(color: Colors.white)),
-                      ),
-                    ],
-                  ]),
-                );
-              },
-            ),
-          ),
-        ]),
-      ),
+      builder: (ctx) => _FullScheduleSheet(plan: plan, onSaved: _load),
     );
   }
 
@@ -548,4 +466,220 @@ class _ToolsScreenState extends State<ToolsScreen> {
       )],
     );
   }
+}
+
+// ─── Full Schedule Sheet ──────────────────────────────────────────────────────
+
+class _FullScheduleSheet extends StatefulWidget {
+  final TaperPlan plan;
+  final VoidCallback onSaved;
+  const _FullScheduleSheet({required this.plan, required this.onSaved});
+
+  @override
+  State<_FullScheduleSheet> createState() => _FullScheduleSheetState();
+}
+
+class _FullScheduleSheetState extends State<_FullScheduleSheet> {
+  late List<double> _steps;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _steps = List<double>.from(widget.plan.steps);
+  }
+
+  static double _r(double v) => (v * 10).round() / 10.0;
+
+  void _adjust(int index, double delta) {
+    final current = _steps[index];
+    final newVal = _r(current + delta);
+    if (newVal <= 0) return;
+
+    setState(() {
+      _steps[index] = newVal;
+      // Regenerate all steps after this index using 10% reductions
+      // down to the plan's target dose
+      final target = widget.plan.targetDose;
+      double prev = newVal;
+      final rebuilt = <double>[..._steps.sublist(0, index + 1)];
+      for (int i = index + 1; i < _steps.length; i++) {
+        double next = _r(prev - prev * 0.1);
+        if (next >= prev) next = _r(prev - 0.1);
+        if (next <= target) {
+          rebuilt.add(target);
+          break;
+        }
+        rebuilt.add(next);
+        prev = next;
+      }
+      // If the chain didn't reach the target yet, extend it
+      if (rebuilt.last > target) {
+        double d = rebuilt.last;
+        while (d > target) {
+          double next = _r(d - d * 0.1);
+          if (next >= d) next = _r(d - 0.1);
+          if (next <= target) { rebuilt.add(target); break; }
+          rebuilt.add(next);
+          d = next;
+        }
+      }
+      _steps = rebuilt;
+    });
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    await FirestoreService.updateTaperPlanSteps(widget.plan.id, _steps);
+    setState(() => _saving = false);
+    widget.onSaved();
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final plan = widget.plan;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      minChildSize: 0.4,
+      builder: (ctx, scrollCtrl) => Column(children: [
+        // Header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+            )),
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Full Schedule', style: AppTextStyles.h3()),
+                Text('${_steps.length - 1} reductions  •  ${plan.medicationName}',
+                    style: AppTextStyles.body(color: AppColors.textMid)),
+              ])),
+              ElevatedButton(
+                onPressed: _saving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                child: _saving
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text('Save', style: AppTextStyles.label(color: Colors.white)),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            Text('Tap ± to adjust a dose — downstream steps recalculate automatically.',
+                style: AppTextStyles.bodySmall()),
+          ]),
+        ),
+
+        const Divider(height: 1, color: AppColors.border),
+
+        // Step list
+        Expanded(
+          child: ListView.builder(
+            controller: scrollCtrl,
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+            itemCount: _steps.length,
+            itemBuilder: (ctx, i) {
+              final date = plan.startDate.add(Duration(days: i * plan.intervalDays));
+              final isCurrent = i == plan.currentStepIndex;
+              final isPast = i < plan.currentStepIndex;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isCurrent ? AppColors.primarySoft : Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isCurrent ? AppColors.primary : const Color(0xFFE8DDD0),
+                  ),
+                ),
+                child: Row(children: [
+                  // Step badge
+                  Container(
+                    width: 26, height: 26,
+                    decoration: BoxDecoration(
+                      color: isCurrent ? AppColors.primary
+                          : isPast ? AppColors.border
+                          : AppColors.primarySoft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(child: Text('${i + 1}',
+                        style: AppTextStyles.caption(
+                            color: isCurrent ? Colors.white
+                                : isPast ? AppColors.textLight
+                                : AppColors.primary).copyWith(fontSize: 10))),
+                  ),
+                  const SizedBox(width: 10),
+
+                  // Date
+                  SizedBox(
+                    width: 80,
+                    child: Text(
+                      i == 0 ? 'Start' : DateFormat('d MMM yy').format(date),
+                      style: AppTextStyles.bodySmall(
+                          color: isPast ? AppColors.textLight : AppColors.textMid),
+                    ),
+                  ),
+
+                  const SizedBox(width: 6),
+
+                  // Dose with +/-
+                  if (isPast)
+                    Expanded(child: Text('${_steps[i]}mg',
+                        style: AppTextStyles.label(color: AppColors.textLight)))
+                  else ...[
+                    _stepBtn(Icons.remove, isPast ? null : () => _adjust(i, -0.1)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text('${_steps[i]}mg',
+                          style: AppTextStyles.label(
+                              color: isCurrent ? AppColors.primary : AppColors.textDark)),
+                    ),
+                    _stepBtn(Icons.add, isPast ? null : () => _adjust(i, 0.1)),
+                  ],
+
+                  const Spacer(),
+                  if (isCurrent)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text('Now', style: AppTextStyles.caption(color: Colors.white)),
+                    ),
+                ]),
+              );
+            },
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _stepBtn(IconData icon, VoidCallback? onTap) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 26, height: 26,
+      decoration: BoxDecoration(
+        color: onTap == null ? AppColors.border.withValues(alpha: 0.3) : Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: onTap == null ? AppColors.border : AppColors.primary.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Icon(icon, size: 14,
+          color: onTap == null ? AppColors.textLight : AppColors.primary),
+    ),
+  );
 }

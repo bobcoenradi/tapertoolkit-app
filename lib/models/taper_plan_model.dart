@@ -13,6 +13,8 @@ class TaperPlan {
   final bool crossTaper;
   final String? crossTaperMed;
   final double? crossTaperTargetDose;
+  /// When set, overrides the computed step list entirely.
+  final List<double>? customSteps;
 
   const TaperPlan({
     required this.id,
@@ -29,12 +31,13 @@ class TaperPlan {
     this.crossTaper = false,
     this.crossTaperMed,
     this.crossTaperTargetDose,
+    this.customSteps,
   });
 
   // ─── Step generation ────────────────────────────────────────────────────────
 
   /// All dose values from startDose down to targetDose, each rounded to 0.1 mg.
-  List<double> get steps => generateSteps(startDose, targetDose);
+  List<double> get steps => customSteps ?? generateSteps(startDose, targetDose);
 
   static List<double> generateSteps(double start, [double target = 0.0]) {
     final list = <double>[_r(start)];
@@ -109,6 +112,7 @@ class TaperPlan {
         crossTaper: m['crossTaper'] == true,
         crossTaperMed: m['crossTaperMed'],
         crossTaperTargetDose: (m['crossTaperTargetDose'] as num?)?.toDouble(),
+        customSteps: (m['customSteps'] as List?)?.map((e) => (e as num).toDouble()).toList(),
       );
 
   Map<String, dynamic> toMap() => {
@@ -125,9 +129,10 @@ class TaperPlan {
         'crossTaper': crossTaper,
         if (crossTaperMed != null) 'crossTaperMed': crossTaperMed,
         if (crossTaperTargetDose != null) 'crossTaperTargetDose': crossTaperTargetDose,
+        if (customSteps != null) 'customSteps': customSteps,
       };
 
-  TaperPlan copyWith({String? status, int? holdAtStepIndex}) => TaperPlan(
+  TaperPlan copyWith({String? status, int? holdAtStepIndex, List<double>? customSteps, bool clearCustomSteps = false}) => TaperPlan(
         id: id,
         uid: uid,
         medicationName: medicationName,
@@ -142,5 +147,6 @@ class TaperPlan {
         crossTaper: crossTaper,
         crossTaperMed: crossTaperMed,
         crossTaperTargetDose: crossTaperTargetDose,
+        customSteps: clearCustomSteps ? null : (customSteps ?? this.customSteps),
       );
 }
