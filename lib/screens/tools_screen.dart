@@ -492,39 +492,37 @@ class _FullScheduleSheetState extends State<_FullScheduleSheet> {
   static double _r(double v) => (v * 10).round() / 10.0;
 
   void _adjust(int index, double delta) {
+    final target = widget.plan.targetDose;
     final current = _steps[index];
     final newVal = _r(current + delta);
-    if (newVal <= 0) return;
+
+    // Don't allow going below target
+    if (newVal < target) return;
 
     setState(() {
+      // If this step hits or passes the target, truncate everything after it
+      if (newVal <= target) {
+        _steps = [..._steps.sublist(0, index), target];
+        return;
+      }
+
+      // Update this step
       _steps[index] = newVal;
-      // Regenerate all steps after this index using 10% reductions
-      // down to the plan's target dose
-      final target = widget.plan.targetDose;
+
+      // Regenerate all downstream steps from newVal using 10% reductions
+      final head = _steps.sublist(0, index + 1).toList();
       double prev = newVal;
-      final rebuilt = <double>[..._steps.sublist(0, index + 1)];
-      for (int i = index + 1; i < _steps.length; i++) {
+      while (prev > target) {
         double next = _r(prev - prev * 0.1);
-        if (next >= prev) next = _r(prev - 0.1);
+        if (next >= prev) next = _r(prev - 0.1); // min 0.1mg step
         if (next <= target) {
-          rebuilt.add(target);
+          head.add(target);
           break;
         }
-        rebuilt.add(next);
+        head.add(next);
         prev = next;
       }
-      // If the chain didn't reach the target yet, extend it
-      if (rebuilt.last > target) {
-        double d = rebuilt.last;
-        while (d > target) {
-          double next = _r(d - d * 0.1);
-          if (next >= d) next = _r(d - 0.1);
-          if (next <= target) { rebuilt.add(target); break; }
-          rebuilt.add(next);
-          d = next;
-        }
-      }
-      _steps = rebuilt;
+      _steps = head;
     });
   }
 
@@ -669,17 +667,21 @@ class _FullScheduleSheetState extends State<_FullScheduleSheet> {
 
   Widget _stepBtn(IconData icon, VoidCallback? onTap) => GestureDetector(
     onTap: onTap,
-    child: Container(
-      width: 26, height: 26,
-      decoration: BoxDecoration(
-        color: onTap == null ? AppColors.border.withValues(alpha: 0.3) : Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: onTap == null ? AppColors.border : AppColors.primary.withValues(alpha: 0.4),
+    behavior: HitTestBehavior.opaque,
+    child: Padding(
+      padding: const EdgeInsets.all(6), // larger tap area
+      child: Container(
+        width: 30, height: 30,
+        decoration: BoxDecoration(
+          color: onTap == null ? AppColors.border.withValues(alpha: 0.3) : Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: onTap == null ? AppColors.border : AppColors.primary.withValues(alpha: 0.4),
+          ),
         ),
+        child: Icon(icon, size: 16,
+            color: onTap == null ? AppColors.textLight : AppColors.primary),
       ),
-      child: Icon(icon, size: 14,
-          color: onTap == null ? AppColors.textLight : AppColors.primary),
     ),
   );
 }
