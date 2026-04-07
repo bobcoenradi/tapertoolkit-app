@@ -86,6 +86,7 @@ class _RootObserver extends NavigatorObserver {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentNavIndex = 0;
   UserProfile? _profile;
+  final _journeyReloadTrigger = ValueNotifier<int>(0);
 
   final List<GlobalKey<NavigatorState>> _navigatorKeys = List.generate(5, (_) => GlobalKey<NavigatorState>());
   final List<_RootObserver> _observers = List.generate(5, (_) => _RootObserver());
@@ -116,8 +117,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _navigatorKeys[index].currentState?.popUntil((route) => route.isFirst);
     if (index != _currentNavIndex) {
       setState(() => _currentNavIndex = index);
-      // Reload profile whenever switching to dashboard tab
       if (index == 0) _loadProfile();
+      // Reload journey data when switching to the Journey tab
+      if (index == 1) _journeyReloadTrigger.value++;
     }
   }
 
@@ -151,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     index: _currentNavIndex,
                     children: [
                       _buildTabNavigator(0, DashboardScreen(profile: _profile)),
-                      _buildTabNavigator(1, const JourneyScreen()),
+                      _buildTabNavigator(1, JourneyScreen(reloadTrigger: _journeyReloadTrigger)),
                       _buildTabNavigator(2, const ToolsScreen()),
                       _buildTabNavigator(3, const SocialScreen()),
                       _buildTabNavigator(4, MenuScreen(profile: _profile)),

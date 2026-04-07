@@ -8,7 +8,8 @@ import '../models/journal_entry_model.dart';
 import '../models/taper_plan_model.dart';
 
 class JourneyScreen extends StatefulWidget {
-  const JourneyScreen({super.key});
+  final ValueNotifier<int>? reloadTrigger;
+  const JourneyScreen({super.key, this.reloadTrigger});
 
   @override
   State<JourneyScreen> createState() => _JourneyScreenState();
@@ -55,10 +56,12 @@ class _JourneyScreenState extends State<JourneyScreen> {
   void initState() {
     super.initState();
     _loadData();
+    widget.reloadTrigger?.addListener(_loadData);
   }
 
   @override
   void dispose() {
+    widget.reloadTrigger?.removeListener(_loadData);
     _journalCtrl.dispose();
     super.dispose();
   }
@@ -201,6 +204,28 @@ class _JourneyScreenState extends State<JourneyScreen> {
       .where((m) => m.refillNeededBy == null ||
           !m.refillNeededBy!.isBefore(DateTime.now()))
       .toList();
+
+  /// All upcoming items merged and sorted by date.
+  List<_ScheduleItem> get _allUpcomingItems {
+    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    final sentinel = DateTime(9999);
+    final items = <_ScheduleItem>[];
+
+    for (final dc in _upcomingDoseChanges) {
+      items.add(_ScheduleItem(type: _ItemKind.doseChange, date: dc.date, payload: dc));
+    }
+    for (final a in _upcomingAppointments) {
+      items.add(_ScheduleItem(type: _ItemKind.appointment, date: a.dateTime, payload: a));
+    }
+    for (final m in _meds) {
+      final d = m.refillNeededBy;
+      if (d == null || !d.isBefore(today)) {
+        items.add(_ScheduleItem(type: _ItemKind.reminder, date: d ?? sentinel, payload: m));
+      }
+    }
+    items.sort((a, b) => a.date.compareTo(b.date));
+    return items;
+  }
 
   // ─── Build ──────────────────────────────────────────────────────────────────
 
@@ -842,190 +867,139 @@ class _JourneyScreenState extends State<JourneyScreen> {
   // ─── List view ──────────────────────────────────────────────────────────────
 
   Widget _buildListView() {
-    // Upcoming only
-    final sortedAppts = _upcomingAppointments;
-    final allMeds = _upcomingReminders;
-    final doseChanges = _upcomingDoseChanges;
-
-    // Journal entries with text, today onwards, newest first
-    final today = DateTime.now();
-    final notesEntries = _entryMap.values
-        .where((e) =>
-            e.text != null &&
-            e.text!.isNotEmpty &&
-            !e.date.isBefore(DateTime(today.year, today.month, today.day)))
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
+    final items = _allUpcomingItems;
 
     return CustomScrollView(
       slivers: [
-        // Dose changes section
-        if (doseChanges.isNotEmpty)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-              child: Container(
-                decoration: AppDecorations.card(),
-                padding: const EdgeInsets.all(16),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    const Icon(Icons.arrow_downward_rounded, size: 18, color: AppColors.primary),
-                    const SizedBox(width: 8),
-                    Text('Dose Changes', style: AppTextStyles.h4()),
-                  ]),
-                  const SizedBox(height: 12),
-                  ...doseChanges.take(10).map((e) => Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE8DDD0)),
-                    ),
-                    child: Row(children: [
-                      Container(
-                        width: 44, padding: const EdgeInsets.symmetric(vertical: 6),
-                        decoration: BoxDecoration(color: AppColors.primarySoft, borderRadius: BorderRadius.circular(8)),
-                        child: Column(children: [
-                          Text(DateFormat('MMM').format(e.date).toUpperCase(),
-                              style: AppTextStyles.caption(color: AppColors.primary).copyWith(letterSpacing: 0.5)),
-                          Text('${e.date.day}', style: AppTextStyles.h4(color: AppColors.primary)),
-                        ]),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('Switch to ${e.dose}mg', style: AppTextStyles.label(color: AppColors.textDark)),
-                        Text(_taperPlan?.medicationName ?? '', style: AppTextStyles.bodySmall()),
-                      ])),
-                      Text('Step ${e.step + 1}', style: AppTextStyles.caption(color: AppColors.textLight)),
-                    ]),
-                  )),
-                  if (doseChanges.length > 10)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text('+ ${doseChanges.length - 10} more…',
-                          style: AppTextStyles.body(color: AppColors.textLight)),
-                    ),
-                ]),
+        if (items.isEmpty)
+          const SliverFillRemaining(
+            child: Center(child: Text('Nothing upcoming scheduled.',
+                style: TextStyle(color: AppColors.textLight))),
+          )
+        else ...[
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (_, i) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _buildListItem(items[i]),
+                ),
+                childCount: items.length,
               ),
             ),
           ),
-
-        // Appointments section
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-            child: Container(
-              decoration: AppDecorations.card(),
-              padding: const EdgeInsets.all(16),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  const Icon(Icons.calendar_month_outlined, size: 18, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Text('Appointments', style: AppTextStyles.h4()),
-                ]),
-                const SizedBox(height: 12),
-                if (sortedAppts.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text('No upcoming appointments', style: AppTextStyles.body()),
-                  )
-                else
-                  ...sortedAppts.map((a) => _AppointmentTile(
-                    appointment: a,
-                    onDelete: () async {
-                      await FirestoreService.deleteAppointment(a.id);
-                      _loadData();
-                    },
-                  )),
-              ]),
-            ),
-          ),
-        ),
-
-        // Reminders section
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Container(
-              decoration: AppDecorations.card(),
-              padding: const EdgeInsets.all(16),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  const Icon(Icons.notifications_outlined, size: 18, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Text('Reminders', style: AppTextStyles.h4()),
-                ]),
-                const SizedBox(height: 12),
-                if (allMeds.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text('No reminders yet', style: AppTextStyles.body()),
-                  )
-                else
-                  ...allMeds.map((m) => _MedTile(
-                    med: m,
-                    onToggle: (ordered) async {
-                      final updated = MedReminder(
-                        id: m.id, uid: m.uid, name: m.name, dosage: m.dosage,
-                        ordered: ordered, refillNeededBy: m.refillNeededBy,
-                        status: ordered ? 'ordered' : 'needed',
-                      );
-                      await FirestoreService.saveMedReminder(updated);
-                      _loadData();
-                    },
-                    onDelete: () async {
-                      await FirestoreService.deleteMedReminder(m.id);
-                      _loadData();
-                    },
-                  )),
-              ]),
-            ),
-          ),
-        ),
-
-        // Notes section
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Container(
-              decoration: AppDecorations.card(),
-              padding: const EdgeInsets.all(16),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  const Icon(Icons.edit_note_rounded, size: 18, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Text('Notes', style: AppTextStyles.h4()),
-                ]),
-                const SizedBox(height: 12),
-                if (notesEntries.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text('No notes yet. Tap a day in the Calendar to add one.',
-                        style: AppTextStyles.body()),
-                  )
-                else
-                  ...notesEntries.map((e) => _NotesTile(
-                    entry: e,
-                    onDelete: () async {
-                      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-                      final updated = JournalEntry(
-                        id: e.id, uid: uid, date: e.date,
-                        mood: e.mood,
-                        text: null,
-                      );
-                      await FirestoreService.saveJournalEntry(updated);
-                      _loadData();
-                    },
-                  )),
-              ]),
-            ),
-          ),
-        ),
-
-        const SliverToBoxAdapter(child: SizedBox(height: 40)),
+        ],
+        const SliverToBoxAdapter(child: SizedBox(height: 80)),
       ],
     );
+  }
+
+  Widget _buildListItem(_ScheduleItem item) {
+    final bool noDate = item.date.year == 9999;
+    final dateLabel = noDate ? null : item.date;
+
+    Widget dateBadge({required Color bg, required Color fg}) {
+      if (noDate) {
+        return Container(
+          width: 44,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+          child: Icon(Icons.event_available_rounded, color: fg, size: 18),
+        );
+      }
+      return Container(
+        width: 44,
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+        child: Column(children: [
+          Text(DateFormat('MMM').format(dateLabel!).toUpperCase(),
+              style: AppTextStyles.caption(color: fg).copyWith(letterSpacing: 0.5, fontSize: 10)),
+          Text('${dateLabel.day}', style: AppTextStyles.h4(color: fg)),
+        ]),
+      );
+    }
+
+    switch (item.type) {
+      case _ItemKind.doseChange:
+        final dc = item.payload as ({DateTime date, double dose, int step});
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.primarySoft,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+          ),
+          child: Row(children: [
+            dateBadge(bg: AppColors.primary.withValues(alpha: 0.12), fg: AppColors.primary),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Start New Dose', style: AppTextStyles.caption(color: AppColors.primary).copyWith(letterSpacing: 0.6)),
+              Text('Switch to ${dc.dose}mg', style: AppTextStyles.label(color: AppColors.textDark)),
+              Text(_taperPlan?.medicationName ?? '', style: AppTextStyles.bodySmall()),
+            ])),
+            Text('Step ${dc.step + 1}', style: AppTextStyles.caption(color: AppColors.textLight)),
+          ]),
+        );
+
+      case _ItemKind.appointment:
+        final a = item.payload as Appointment;
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEEF4FA),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF7BAFD4).withValues(alpha: 0.3)),
+          ),
+          child: Row(children: [
+            dateBadge(bg: const Color(0xFF7BAFD4).withValues(alpha: 0.15), fg: const Color(0xFF4A8DB5)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Appointment', style: AppTextStyles.caption(color: const Color(0xFF4A8DB5)).copyWith(letterSpacing: 0.6)),
+              Text(a.title, style: AppTextStyles.label(color: AppColors.textDark)),
+              if (a.subtitle != null && a.subtitle!.isNotEmpty)
+                Text(a.subtitle!, style: AppTextStyles.bodySmall()),
+              if (!noDate)
+                Text(DateFormat('h:mm a').format(a.dateTime), style: AppTextStyles.bodySmall()),
+            ])),
+            GestureDetector(
+              onTap: () async {
+                await FirestoreService.deleteAppointment(a.id);
+                _loadData();
+              },
+              child: const Icon(Icons.delete_outline, size: 18, color: AppColors.textLight),
+            ),
+          ]),
+        );
+
+      case _ItemKind.reminder:
+        final m = item.payload as MedReminder;
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.warning.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.warning.withValues(alpha: 0.25)),
+          ),
+          child: Row(children: [
+            dateBadge(bg: AppColors.warning.withValues(alpha: 0.12), fg: AppColors.warning),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Reminder', style: AppTextStyles.caption(color: AppColors.warning).copyWith(letterSpacing: 0.6)),
+              Text(m.name, style: AppTextStyles.label(color: AppColors.textDark)),
+              if (m.dosage != null && m.dosage!.isNotEmpty)
+                Text(m.dosage!, style: AppTextStyles.bodySmall()),
+            ])),
+            GestureDetector(
+              onTap: () async {
+                await FirestoreService.deleteMedReminder(m.id);
+                _loadData();
+              },
+              child: const Icon(Icons.delete_outline, size: 18, color: AppColors.textLight),
+            ),
+          ]),
+        );
+    }
   }
 
   // ─── Sheets ─────────────────────────────────────────────────────────────────
@@ -1397,4 +1371,15 @@ class _NotesTile extends StatelessWidget {
       ]),
     );
   }
+}
+
+// ─── Unified list item model ──────────────────────────────────────────────────
+
+enum _ItemKind { doseChange, appointment, reminder }
+
+class _ScheduleItem {
+  final _ItemKind type;
+  final DateTime date;
+  final dynamic payload;
+  const _ScheduleItem({required this.type, required this.date, required this.payload});
 }
