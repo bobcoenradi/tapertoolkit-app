@@ -16,7 +16,6 @@ class ToolsScreen extends StatefulWidget {
 class _ToolsScreenState extends State<ToolsScreen> {
   TaperPlan? _plan;
   bool _loadingPlan = true;
-  List<Map<String, dynamic>> _doseLog = [];
 
   @override
   void initState() {
@@ -27,11 +26,9 @@ class _ToolsScreenState extends State<ToolsScreen> {
   Future<void> _load() async {
     try {
       final plan = await FirestoreService.fetchActiveTaperPlan();
-      final log  = await FirestoreService.fetchDoseLog();
       if (!mounted) return;
       setState(() {
         _plan = plan;
-        _doseLog = log;
         _loadingPlan = false;
       });
     } catch (_) {
@@ -423,10 +420,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
 
   Widget _buildProgressChart() {
     final plan = _plan;
-    final hasLog = _doseLog.isNotEmpty;
-    final hasPlan = plan != null;
-
-    if (!hasLog && !hasPlan) {
+    if (plan == null) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
         child: Container(
@@ -435,47 +429,59 @@ class _ToolsScreenState extends State<ToolsScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Dose History', style: AppTextStyles.h4()),
             const SizedBox(height: 16),
-            Center(child: Text('Log your first dose to see progress',
+            Center(child: Text('Create a taper plan to see your schedule',
                 style: AppTextStyles.body())),
           ]),
         ),
       );
     }
 
-    // Build past spots from doseLog — x = days since plan start (or index if no plan)
-    final origin = plan?.startDate ?? DateTime.now();
-    final List<FlSpot> pastSpots = _doseLog.map((e) {
-      final loggedAt = DateTime.tryParse(e['loggedAt'] as String? ?? '') ?? DateTime.now();
-      final x = loggedAt.difference(origin).inDays.toDouble();
-      final y = (e['dose'] as num).toDouble();
-      return FlSpot(x, y);
-    }).toList()..sort((a, b) => a.x.compareTo(b.x));
+    final steps = plan.steps;
+    final origin = plan.startDate;
+    final today = DateTime.now();
 
-    // Build future spots from plan steps — x = days since plan start
+    // Build spots: x = days since plan start, y = dose
+    // Split into past (solid) and future (dashed) at today
+    final List<FlSpot> pastSpots = [];
     final List<FlSpot> futureSpots = [];
-    if (hasPlan) {
-      final steps = plan.steps;
-      final currentIdx = plan.currentStepIndex;
-      // Start the dotted line from the current dose at today
-      final todayX = DateTime.now().difference(origin).inDays.toDouble();
-      futureSpots.add(FlSpot(todayX, plan.currentDose));
-      for (int i = currentIdx + 1; i < steps.length; i++) {
-        final x = plan.stepDate(i).difference(origin).inDays.toDouble();
-        futureSpots.add(FlSpot(x, steps[i]));
+
+    for (int i = 0; i < steps.length; i++) {
+      final date = plan.stepDate(i);
+      final x = date.difference(origin).inDays.toDouble();
+      final y = steps[i];
+      if (!date.isAfter(today)) {
+        pastSpots.add(FlSpot(x, y));
+      } else {
+        futureSpots.add(FlSpot(x, y));
       }
     }
 
-    // Y axis: max = plan startDose or first log, min = 0
-    final allY = [
-      ...pastSpots.map((s) => s.y),
-      ...futureSpots.map((s) => s.y),
-      if (hasPlan) plan.startDose,
-    ];
-    final maxY = allY.isEmpty ? 10.0 : (allY.reduce((a, b) => a > b ? a : b) * 1.1);
+    // Bridge: connect past line to future line at today's current dose
+    if (pastSpots.isNotEmpty && futureSpots.isNotEmpty) {
+      futureSpots.insert(0, pastSpots.last);
+    } else if (pastSpots.isEmpty) {
+      // Plan hasn't started yet — treat everything as future
+      futureSpots.addAll(steps.asMap().entries.map((e) {
+        final x = plan.stepDate(e.key).difference(origin).inDays.toDouble();
+        return FlSpot(x, e.value);
+      }));
+    }
 
-    final currentDoseLabel = hasPlan
-        ? '${plan.currentDose}mg'
-        : hasLog ? '${(_doseLog.last['dose'] as num).toStringAsFixed(1)}mg' : '';
+    final maxY = (plan.startDose * 1.1).ceilToDouble();
+    final endDate = plan.stepDate(steps.length - 1);
+    final totalDays = endDate.difference(origin).inDays.toDouble();
+
+    // Collect month-boundary x values for x-axis labels
+    final labelPoints = <double, String>{};
+    DateTime cursor = DateTime(origin.year, origin.month, 1).add(const Duration(days: 32));
+    cursor = DateTime(cursor.year, cursor.month, 1);
+    while (!cursor.isAfter(endDate)) {
+      final x = cursor.difference(origin).inDays.toDouble();
+      labelPoints[x] = DateFormat('MMM yy').format(cursor);
+      cursor = DateTime(cursor.year, cursor.month + 1, 1);
+    }
+    // Always show start label
+    labelPoints[0.0] = DateFormat('MMM yy').format(origin);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
@@ -485,25 +491,26 @@ class _ToolsScreenState extends State<ToolsScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('Dose History', style: AppTextStyles.h4()),
-            if (currentDoseLabel.isNotEmpty)
-              Text(currentDoseLabel, style: AppTextStyles.h3(color: AppColors.primary)),
+            Text('${plan.currentDose}mg', style: AppTextStyles.h3(color: AppColors.primary)),
           ]),
           const SizedBox(height: 8),
           // Legend
           Row(children: [
             _legendDot(AppColors.primary, solid: true),
             const SizedBox(width: 6),
-            Text('Logged', style: AppTextStyles.bodySmall()),
+            Text('Past', style: AppTextStyles.bodySmall()),
             const SizedBox(width: 16),
             _legendDot(AppColors.primary.withValues(alpha: 0.5), solid: false),
             const SizedBox(width: 6),
-            Text('Planned', style: AppTextStyles.bodySmall()),
+            Text('Scheduled', style: AppTextStyles.bodySmall()),
           ]),
           const SizedBox(height: 16),
           SizedBox(
-            height: 120,
+            height: 140,
             child: LineChart(
               LineChartData(
+                minX: 0,
+                maxX: totalDays,
                 minY: 0,
                 maxY: maxY,
                 gridData: FlGridData(
@@ -519,7 +526,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      reservedSize: 36,
+                      reservedSize: 40,
                       interval: maxY / 4,
                       getTitlesWidget: (v, _) => Text(
                         v == 0 ? '0' : '${v.round()}mg',
@@ -529,12 +536,32 @@ class _ToolsScreenState extends State<ToolsScreen> {
                   ),
                   rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 22,
+                      getTitlesWidget: (value, meta) {
+                        // Find the nearest label within 3 days
+                        String? label;
+                        for (final entry in labelPoints.entries) {
+                          if ((entry.key - value).abs() < 3) {
+                            label = entry.value;
+                            break;
+                          }
+                        }
+                        if (label == null) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(label, style: AppTextStyles.bodySmall()),
+                        );
+                      },
+                    ),
+                  ),
                 ),
                 borderData: FlBorderData(show: false),
                 lineBarsData: [
                   // Past — solid line
-                  if (pastSpots.isNotEmpty)
+                  if (pastSpots.length > 1)
                     LineChartBarData(
                       spots: pastSpots,
                       isCurved: false,
@@ -542,7 +569,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
                       barWidth: 2.5,
                       dotData: FlDotData(
                         show: true,
-                        getDotPainter: (p0, p1, p2, p3) => FlDotCirclePainter(
+                        getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
                           radius: 3,
                           color: AppColors.primary,
                           strokeWidth: 0,
@@ -564,7 +591,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
                       dashArray: [6, 4],
                       dotData: FlDotData(
                         show: true,
-                        getDotPainter: (p0, p1, p2, p3) => FlDotCirclePainter(
+                        getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
                           radius: 3,
                           color: AppColors.primary.withValues(alpha: 0.5),
                           strokeWidth: 0,
