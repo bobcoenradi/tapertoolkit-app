@@ -55,16 +55,6 @@ class _ToolsScreenState extends State<ToolsScreen> {
     );
   }
 
-  Future<void> _adjustDose(double delta) async {
-    final plan = _plan;
-    if (plan == null) return;
-    final newDose = double.parse(
-        ((plan.currentDose + delta) * 10).round().toString()) / 10.0;
-    if (newDose <= 0) return;
-    await FirestoreService.adjustTaperPlanDose(plan.id, newDose);
-    _load();
-  }
-
   Future<void> _toggleHold() async {
     if (_plan == null) return;
     final isHold = _plan!.status == 'hold';
@@ -221,23 +211,14 @@ class _ToolsScreenState extends State<ToolsScreen> {
 
           const SizedBox(height: 16),
 
-          // Current dose with +/- adjustment
+          // Current dose display
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('CURRENT DOSE',
                   style: AppTextStyles.caption(color: AppColors.primary)
                       .copyWith(letterSpacing: 0.8)),
-              Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                _doseBtn(Icons.remove, () => _adjustDose(-0.1)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Text('${plan.currentDose}mg',
-                      style: AppTextStyles.h1(color: AppColors.textDark)),
-                ),
-                _doseBtn(Icons.add, () => _adjustDose(0.1)),
-              ]),
-              Text('Tap ±0.1mg to adjust — schedule updates automatically',
-                  style: AppTextStyles.bodySmall()),
+              Text('${plan.currentDose}mg',
+                  style: AppTextStyles.h1(color: AppColors.textDark)),
             ]),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
               Text('STEP',
@@ -360,19 +341,6 @@ class _ToolsScreenState extends State<ToolsScreen> {
       _buildUpcomingSteps(plan),
     ]);
   }
-
-  Widget _doseBtn(IconData icon, VoidCallback onTap) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      width: 32, height: 32,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.7),
-        shape: BoxShape.circle,
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
-      ),
-      child: Icon(icon, size: 18, color: AppColors.primary),
-    ),
-  );
 
   Widget _buildUpcomingSteps(TaperPlan plan) {
     final steps = plan.steps;
@@ -662,6 +630,7 @@ class _FullScheduleSheet extends StatefulWidget {
 
 class _FullScheduleSheetState extends State<_FullScheduleSheet> {
   late List<double> _steps;
+  double _reductionPct = 10.0; // default 10% per step
   bool _saving = false;
 
   @override
@@ -671,6 +640,36 @@ class _FullScheduleSheetState extends State<_FullScheduleSheet> {
   }
 
   static double _r(double v) => (v * 10).round() / 10.0;
+
+  /// Adjusts the global taper speed: regenerates all steps after the current one
+  /// using the new reduction percentage, leaving past steps untouched.
+  void _adjustSpeed(double delta) {
+    final newPct = (_reductionPct + delta).clamp(2.5, 25.0);
+    if (newPct == _reductionPct) return;
+
+    final target = widget.plan.targetDose;
+    final currentIdx = widget.plan.currentStepIndex;
+    final currentDose = _steps.isNotEmpty ? _steps[currentIdx.clamp(0, _steps.length - 1)] : widget.plan.currentDose;
+
+    // Keep steps up to and including current; regenerate everything after
+    final head = _steps.sublist(0, currentIdx.clamp(0, _steps.length) + 1).toList();
+    double prev = currentDose;
+    while (prev > target) {
+      double next = _r(prev - prev * (newPct / 100));
+      if (next >= prev) next = _r(prev - 0.1);
+      if (next <= target) {
+        head.add(target);
+        break;
+      }
+      head.add(next);
+      prev = next;
+    }
+
+    setState(() {
+      _reductionPct = newPct;
+      _steps = head;
+    });
+  }
 
   void _adjust(int index, double delta) {
     final target = widget.plan.targetDose;
@@ -753,8 +752,30 @@ class _FullScheduleSheetState extends State<_FullScheduleSheet> {
                     : Text('Save', style: AppTextStyles.label(color: Colors.white)),
               ),
             ]),
+            const SizedBox(height: 12),
+            // Global speed control
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.primarySoft,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('TAPER SPEED', style: AppTextStyles.caption(color: AppColors.primary).copyWith(letterSpacing: 0.8)),
+                    Text('${_reductionPct.toStringAsFixed(1).replaceAll('.0', '')}% reduction per step',
+                        style: AppTextStyles.label(color: AppColors.textDark)),
+                  ]),
+                ),
+                _stepBtn(Icons.remove, _reductionPct <= 2.5 ? null : () => _adjustSpeed(-2.5)),
+                const SizedBox(width: 4),
+                _stepBtn(Icons.add, _reductionPct >= 25.0 ? null : () => _adjustSpeed(2.5)),
+              ]),
+            ),
             const SizedBox(height: 8),
-            Text('Tap ± to adjust a dose — downstream steps recalculate automatically.',
+            Text('Adjust speed to change the whole schedule, or tap ± on individual doses.',
                 style: AppTextStyles.bodySmall()),
           ]),
         ),
